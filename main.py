@@ -1,59 +1,53 @@
 import os
-import logging
 import json
+import logging
 from fastapi import FastAPI, Request
-from dotenv import load_dotenv
 from telegram import Bot
-
 from service import get_plant_data, format_plant_info
 
-# ─── Настройка ─────────────────────────────
-load_dotenv()
 logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
 
-TOKEN = os.getenv("BOT_TOKEN")
-if not TOKEN:
-    logging.error("❌ BOT_TOKEN не найден.")
-    raise RuntimeError("BOT_TOKEN отсутствует")
+TELEGRAM_TOKEN = os.getenv("BOT_TOKEN")
+bot = Bot(token=TELEGRAM_TOKEN)
 
-bot = Bot(token=TOKEN)
 app = FastAPI()
 
-# ─── Проверка доступности ─────────────────
-@app.get("/")
-def root():
-    return {"status": "ok"}
 
-# ─── Обработка Webhook ─────────────────────
 @app.post("/webhook")
-async def telegram_webhook(req: Request):
+async def telegram_webhook(request: Request):
     try:
-        data = await req.json()
-        logging.info(f"📩 Получен запрос: {json.dumps(data, ensure_ascii=False)}")
+        data = await request.json()
+        logger.info(f"📩 Получен запрос: {data}")
 
-        message = data.get("message")
-        if not message:
-            logging.warning("⚠️ Нет поля 'message'")
-            return {"ok": True}
-
+        message = data.get("message", {})
         chat_id = message.get("chat", {}).get("id")
         text = message.get("text", "").strip()
-        logging.info(f"🗣 Пользователь: {chat_id} → {text}")
+
+        if not text or not chat_id:
+            return {"status": "ignored"}
+
+        logger.info(f"🗣 Пользователь: {chat_id} → {text}")
 
         plant = get_plant_data(text)
+
         if plant:
             reply = format_plant_info(plant)
-            image = plant.get("image")
-            bot.send_message(chat_id=chat_id, text=reply, parse_mode="HTML")
 
+            image_path = f"images/{plant.get('image')}"
+            if plant.get("image") and os.path.exists(image_path):
+                with open(image_path, "rb") as image:
+                    bot.send_photo(chat_id=chat_id, photo=image, caption=reply, parse_mode="HTML")
+            else:
+                bot.send_message(chat_id=chat_id, text=reply, parse_mode="HTML")
         else:
-            bot.send_message(chat_id=chat_id, text="❌ Растение не найдено.")
+            bot.send_message(chat_id=chat_id, text="❗ Растение не найдено. Попробуйте другое название.")
     except Exception as e:
-        logging.exception("❌ Ошибка в обработке сообщения")
+        logger.error("❌ Ошибка в обработке сообщения", exc_info=e)
 
-    return {"ok": True}
+    return {"status": "ok"}
 
-# ─── Запуск локально ───────────────────────
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8080)
