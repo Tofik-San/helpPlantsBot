@@ -42,3 +42,6 @@ async def telegram_webhook(req: Request):
         bot.send_message(chat_id=chat_id, text="❌ Растение не найдено.")
 
     return {"ok": True}
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="0.0.0.0", port=8080)
