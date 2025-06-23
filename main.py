@@ -44,10 +44,8 @@ async def telegram_webhook(req: Request):
         if plant:
             reply = format_plant_info(plant)
             image = plant.get("image")
-            if image:
-                bot.send_photo(chat_id=chat_id, photo=image, caption=reply, parse_mode="HTML")
-            else:
-                 bot.send_message(chat_id=chat_id, text=reply, parse_mode="HTML")
+            bot.send_message(chat_id=chat_id, text=reply, parse_mode="HTML")
+
         else:
             bot.send_message(chat_id=chat_id, text="❌ Растение не найдено.")
     except Exception as e:
