@@ -1,0 +1,28 @@
+[
+  {
+    "name": "Гортензия метельчатая",
+    "type": "лиственное",
+    "image": "https://upload.wikimedia.org/wikipedia/commons/5/5b/Hydrangea_paniculata_1.jpg",
+    "climate": "умеренный",
+    "care": {
+      "watering": "2 раза в неделю",
+      "soil": "влажная, слабокислая",
+      "pruning": "весна или осень",
+      "light": "рассеянный свет"
+    },
+    "facts": "Цветёт до поздней осени. Хорошо приживается в полутени."
+  },
+  {
+    "name": "Туя западная",
+    "type": "хвойное",
+    "image": "https://upload.wikimedia.org/wikipedia/commons/0/06/Thuja_occidentalis_001.jpg",
+    "climate": "умеренный, прохладный",
+    "care": {
+      "watering": "1 раз в неделю",
+      "soil": "рыхлая, слабокислая",
+      "pruning": "весной",
+      "light": "полутень"
+    },
+    "facts": "Подходит для живых изгородей. Имеет плотную крону."
+  }
+]
