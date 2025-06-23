@@ -1,47 +1,33 @@
-import os
-import logging
 from fastapi import FastAPI, Request
-from telegram import Bot, Update
-from dotenv import load_dotenv
-from service import get_plant_data, format_plant_info
+import logging
+import json
 
-# Загрузка переменных
-load_dotenv()
-TOKEN = os.getenv("BOT_TOKEN")
-
-bot = Bot(token=TOKEN)
 app = FastAPI()
-
 logging.basicConfig(level=logging.INFO)
 
 @app.post("/webhook")
-async def telegram_webhook(req: Request):
-    data = await req.json()
-    logging.info(f"📩 Получен запрос: {data}")
+async def webhook(req: Request):
+    try:
+        data = await req.json()
+        logging.info(f"📩 Получен запрос: {json.dumps(data, ensure_ascii=False)}")
 
-    update = Update.de_json(data, bot)
+        message = data.get("message")
+        if not message:
+            logging.warning("⚠️ Нет поля 'message' в payload")
+            return {"ok": True}
 
-    if not update.message or not update.message.text:
-        logging.info("📭 Нет текстового сообщения.")
-        return {"ok": True}
+        chat_id = message.get("chat", {}).get("id")
+        text = message.get("text", "")
 
-    text = update.message.text
-    chat_id = update.message.chat.id
-    logging.info(f"🗣 Пользователь: {chat_id} → {text}")
+        logging.info(f"🗣 Пользователь: {chat_id} → {text}")
+        # Здесь вставь свою основную обработку текста и ответ боту, если нужно
 
-    plant = get_plant_data(text)
-    if plant:
-        reply = format_plant_info(plant)
-        image = plant.get("image")
-
-        if image:
-            bot.send_photo(chat_id=chat_id, photo=image, caption=reply, parse_mode="HTML")
-        else:
-            bot.send_message(chat_id=chat_id, text=reply, parse_mode="HTML")
-    else:
-        bot.send_message(chat_id=chat_id, text="❌ Растение не найдено.")
+    except Exception as e:
+        logging.exception("❌ Ошибка в обработчике webhook")
 
     return {"ok": True}
+
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8080)
