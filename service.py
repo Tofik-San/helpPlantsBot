@@ -24,9 +24,13 @@ def format_plant_info_extended(plant):
     pest_control = "\n".join(f"• {item}" for item in plant.get("pest_control", []))
     fertilizers = "\n".join(f"• {item}" for item in plant.get("fertilizers", []))
 
+    # Убираем None в отображении
+    compatibility = f"❤️ Сочетается с: {plant.get('compatible_with')}\n" if plant.get('compatible_with') else ""
+    variety = f"🌿 Сорта: {plant.get('varieties')}\n" if plant.get('varieties') else ""
+
     return (
-        f"❤️ Сочетается с: {plant.get('compatible_with')}\n"
-        f"🌿 Сорта: {plant.get('varieties')}\n"
+        f"{compatibility}"
+        f"{variety}"
         f"☀️ Свет: {care.get('light')}\n"
         f"💧 Полив: {care.get('watering')}\n"
         f"🌱 Почва: {care.get('soil')}\n"
