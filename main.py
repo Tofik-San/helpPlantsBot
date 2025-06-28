@@ -17,7 +17,7 @@ bot = Bot(token=TELEGRAM_TOKEN)
 app = FastAPI()
 
 info_keyboard = ReplyKeyboardMarkup(
-    [[KeyboardButton("📋 Подробнее"), KeyboardButton("🛒 Заказать услугу")]],
+    [[KeyboardButton("📋 Инфо о Проекте"), KeyboardButton("🛒 Заказать услугу")]],
     resize_keyboard=True,
     one_time_keyboard=False
 )
@@ -29,7 +29,7 @@ async def telegram_webhook(request: Request):
         logger.info(f"📩 Получен запрос: {data}")
         update = Update.de_json(data, bot)
 
-        # Обработка inline-кнопки "Инфо"
+        # Обработка inline-кнопки "Подробнее"
         if update.callback_query:
             query = update.callback_query
             chat_id = query.message.chat.id
@@ -69,7 +69,7 @@ async def telegram_webhook(request: Request):
                 )
                 return JSONResponse(content={"status": "ok"})
 
-            if text == "📋 Подробнее":
+            if text == "📋 Инфо о Проекте":
                 bot_info = get_bot_info()
                 bot.send_message(
                     chat_id=chat_id,
@@ -115,7 +115,7 @@ async def telegram_webhook(request: Request):
             else:
                 bot.send_message(
                     chat_id=chat_id,
-                    text="🌱 Растение не найдено. Попробуйте другое название.",
+                    text="🌱 Растение не найдено. Имеющиеся растения по кнопке Каталог.",
                     reply_markup=info_keyboard
                 )
 
