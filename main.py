@@ -23,7 +23,7 @@ info_keyboard = ReplyKeyboardMarkup(
     one_time_keyboard=False
 )
 
-# Загружаем базу растений для кнопок каталога
+# Загружаем базу растений для фильтрации по категориям
 with open("plants.json", encoding="utf-8") as f:
     PLANTS = json.load(f)
 
@@ -34,13 +34,53 @@ async def telegram_webhook(request: Request):
         logger.info(f"📩 Получен запрос: {data}")
         update = Update.de_json(data, bot)
 
-        # Обработка inline callback
         if update.callback_query:
             query = update.callback_query
             chat_id = query.message.chat.id
             callback_data = query.data
 
-            # Показываем карточку растения по выбору из каталога
+            # Категории каталога
+            if callback_data == "catalog_garden":
+                buttons = []
+                for plant in PLANTS:
+                    if "садовое" in plant.get("type", "").lower():
+                        buttons.append([InlineKeyboardButton(plant["name"], callback_data=f"plant_{plant['name']}")])
+                if buttons:
+                    catalog_keyboard = InlineKeyboardMarkup(buttons)
+                    bot.send_message(
+                        chat_id=chat_id,
+                        text="🪴 Выберите растение для сада:",
+                        reply_markup=catalog_keyboard
+                    )
+                else:
+                    bot.send_message(
+                        chat_id=chat_id,
+                        text="❌ В категории 'Сад' пока нет растений.",
+                        reply_markup=info_keyboard
+                    )
+                return JSONResponse(content={"status": "ok"})
+
+            if callback_data == "catalog_indoor":
+                buttons = []
+                for plant in PLANTS:
+                    if "комнатное" in plant.get("type", "").lower():
+                        buttons.append([InlineKeyboardButton(plant["name"], callback_data=f"plant_{plant['name']}")])
+                if buttons:
+                    catalog_keyboard = InlineKeyboardMarkup(buttons)
+                    bot.send_message(
+                        chat_id=chat_id,
+                        text="🏠 Выберите комнатное растение:",
+                        reply_markup=catalog_keyboard
+                    )
+                else:
+                    bot.send_message(
+                        chat_id=chat_id,
+                        text="❌ В категории 'Комнатные' пока нет растений.",
+                        reply_markup=info_keyboard
+                    )
+                return JSONResponse(content={"status": "ok"})
+
+            # Выдача карточки по нажатию
             if callback_data.startswith("plant_"):
                 plant_name = callback_data.replace("plant_", "")
                 plant = get_plant_data(plant_name)
@@ -94,7 +134,6 @@ async def telegram_webhook(request: Request):
                     )
                 return JSONResponse(content={"status": "ok"})
 
-        # Обработка текстовых сообщений
         if update.message and update.message.text:
             chat_id = update.message.chat.id
             text = update.message.text.strip()
@@ -128,20 +167,18 @@ async def telegram_webhook(request: Request):
                 return JSONResponse(content={"status": "ok"})
 
             if text == "📚 Каталог":
-                # Формируем inline-кнопки из PLANTS
-                buttons = []
-                for plant in PLANTS:
-                    buttons.append([InlineKeyboardButton(plant["name"], callback_data=f"plant_{plant['name']}")])
-                catalog_keyboard = InlineKeyboardMarkup(buttons)
-
+                catalog_keyboard = InlineKeyboardMarkup([
+                    [InlineKeyboardButton("🪴 Растения для сада", callback_data="catalog_garden")],
+                    [InlineKeyboardButton("🏠 Комнатные растения", callback_data="catalog_indoor")]
+                ])
                 bot.send_message(
                     chat_id=chat_id,
-                    text="📚 Выберите растение из каталога:",
+                    text="📚 Выберите категорию каталога:",
                     reply_markup=catalog_keyboard
                 )
                 return JSONResponse(content={"status": "ok"})
 
-            # Отправка карточки при ручном вводе
+            # Поиск растения по ручному вводу
             plant = get_plant_data(text)
             if plant:
                 reply = format_plant_info_base(plant)
