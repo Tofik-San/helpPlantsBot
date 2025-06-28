@@ -32,9 +32,22 @@ async def telegram_webhook(request: Request):
             text = update.message.text.strip()
             logger.info(f"🗣 Пользователь: {chat_id} → {text}")
 
+            if text == "/start":
+                bot.send_message(
+                    chat_id=chat_id,
+                    text="🌿 Напишите название растения, и бот покажет полную карточку с фото и советами.",
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=info_keyboard
+                )
+                return JSONResponse(content={"status": "ok"})
+
             if text == "ℹ️ Инфо":
                 bot_info = get_bot_info()
-                bot.send_message(chat_id=chat_id, text=bot_info, parse_mode=ParseMode.HTML)
+                bot.send_message(
+                    chat_id=chat_id,
+                    text=bot_info,
+                    parse_mode=ParseMode.HTML
+                )
                 return JSONResponse(content={"status": "ok"})
 
             if text == "🛒 Заказать услугу":
@@ -70,7 +83,7 @@ async def telegram_webhook(request: Request):
             else:
                 bot.send_message(
                     chat_id=chat_id,
-                    text="🌱 Растение не найдено. Попробуйте другое название.",
+                    text="🌱 Растение не найдено. информация по имеющимся растениям по кнопке Каталог.",
                     reply_markup=info_keyboard
                 )
 
