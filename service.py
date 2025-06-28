@@ -10,15 +10,15 @@ def get_plant_data(query: str) -> dict | None:
             return plant
     return None
 
-def format_plant_info(plant: dict) -> str:
+def format_plant_info(plant):
     care = plant.get("care", {})
     return (
-        f"<b>{plant['name']}</b>\n"
-        f"📌 Тип: {plant.get('type', '-')}\n"
-        f"☀️ Свет: {care.get('light', '-')}\n"
-        f"💧 Полив: {care.get('watering', '-')}\n"
-        f"🌱 Почва: {care.get('soil', '-')}\n"
-        f"✂️ Обрезка: {care.get('pruning', '-')}\n"
-        f"🌍 Климат: {plant.get('climate', '-')}\n"
-        f"💡 Факт: {plant.get('facts', '-')}"
+        f"🌿 <b>{plant.get('name')}</b>\n"
+        f"Тип: {plant.get('type')}\n"
+        f"Климат: {plant.get('climate')}\n\n"
+        f"☀️ Свет: {care.get('light')}\n"
+        f"💧 Полив: {care.get('watering')}\n"
+        f"🌱 Почва: {care.get('soil')}\n"
+        f"✂️ Обрезка: {care.get('pruning')}\n\n"
+        f"📌 Факт: {plant.get('fact')}"
     )
