@@ -2,7 +2,7 @@ import logging
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from telegram import Bot, Update, KeyboardButton, ReplyKeyboardMarkup
-from telegram.constants import ParseMode
+from telegram import ParseMode
 from telegram.error import TelegramError
 from service import get_plant_data, format_plant_info_base, format_plant_info_extended, get_bot_info
 import os
