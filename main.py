@@ -4,7 +4,7 @@ from fastapi import FastAPI, Request
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup
 from service import get_plant_data, format_plant_info
 
-TOKEN = os.environ["TELEGRAM_TOKEN"]
+TOKEN = os.environ["BOT_TOKEN"]
 bot = Bot(token=TOKEN)
 app = FastAPI()
 logging.basicConfig(level=logging.INFO)
