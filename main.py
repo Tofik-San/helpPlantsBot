@@ -29,7 +29,7 @@ async def telegram_webhook(request: Request):
         logger.info(f"📩 Получен запрос: {data}")
         update = Update.de_json(data, bot)
 
-        # Обработка inline-кнопки "Подробнее"
+        # Обработка inline-кнопки "Инфо"
         if update.callback_query:
             query = update.callback_query
             chat_id = query.message.chat.id
