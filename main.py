@@ -28,7 +28,7 @@ async def telegram_webhook(req: Request):
         plant = get_plant_data(text)
         if plant:
             reply_full = format_plant_info(plant)
-            reply_short = reply_full[:900] + "...\nНажмите 'ℹ️ Подробнее' для подробностей."
+            reply_short = "\n".join(reply_full.split("\n")[:6])  # показываем только первые 6 строк
 
             image_path = f"images/{plant['image']}"
             with open(image_path, "rb") as image:
@@ -38,7 +38,6 @@ async def telegram_webhook(req: Request):
 
     elif callback_query:
         chat_id = callback_query["message"]["chat"]["id"]
-        message_id = callback_query["message"]["message_id"]
         data = callback_query["data"]
         user_message = callback_query["message"]["caption"].split("\n")[0].replace("🌿 ", "")
 
