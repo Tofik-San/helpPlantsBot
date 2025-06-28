@@ -15,7 +15,9 @@ bot = Bot(token=TELEGRAM_TOKEN)
 app = FastAPI()
 
 info_keyboard = ReplyKeyboardMarkup(
-    [[KeyboardButton("ℹ️ Инфо")]], resize_keyboard=True, one_time_keyboard=False
+    [[KeyboardButton("ℹ️ Инфо"), KeyboardButton("🛒 Заказать услугу")]],
+    resize_keyboard=True,
+    one_time_keyboard=False
 )
 
 @app.post("/webhook")
@@ -33,6 +35,15 @@ async def telegram_webhook(request: Request):
             if text == "ℹ️ Инфо":
                 bot_info = get_bot_info()
                 bot.send_message(chat_id=chat_id, text=bot_info, parse_mode=ParseMode.HTML)
+                return JSONResponse(content={"status": "ok"})
+
+            if text == "🛒 Заказать услугу":
+                bot.send_message(
+                    chat_id=chat_id,
+                    text="🛒 Заказ услуги: функция в разработке. Здесь появится описание и кнопка оплаты после диплоя.",
+                    parse_mode=ParseMode.HTML,
+                    reply_markup=info_keyboard
+                )
                 return JSONResponse(content={"status": "ok"})
 
             plant = get_plant_data(text)
@@ -57,7 +68,11 @@ async def telegram_webhook(request: Request):
                         reply_markup=info_keyboard,
                     )
             else:
-                bot.send_message(chat_id=chat_id, text="🌱 Растение не найдено. Попробуйте другое название.", reply_markup=info_keyboard)
+                bot.send_message(
+                    chat_id=chat_id,
+                    text="🌱 Растение не найдено. Попробуйте другое название.",
+                    reply_markup=info_keyboard
+                )
 
         return JSONResponse(content={"status": "ok"})
 
