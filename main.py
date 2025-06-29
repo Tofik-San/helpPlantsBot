@@ -75,7 +75,7 @@ async def telegram_webhook(request: Request):
             if text == "📢 Канал":
                 bot.send_message(
                     chat_id=chat_id,
-                    text="🔗 Переходите в канал BOTanik:\nhttps://t.me/+g4KcJjJAR7pkZWJi",
+                    text="🔗 Переходите в канал, что следить за новостями и обновлением Бота BOTanik:\nhttps://t.me/+g4KcJjJAR7pkZWJi",
                     disable_web_page_preview=True,
                     reply_markup=info_keyboard
                 )
