@@ -81,6 +81,34 @@ async def telegram_webhook(request: Request):
             else:
                 bot.send_message(chat_id=chat_id, text="🌱 Растение не найдено. Кликните Каталог.", reply_markup=info_keyboard)
 
+        if update.callback_query:
+            query = update.callback_query
+            chat_id = query.message.chat.id
+            data = query.data
+            logger.info(f"🖱 Callback: {chat_id} → {data}")
+
+            # Обязательно подтверждаем callback, чтобы Telegram не висел
+            query.answer()
+
+            if data.startswith("details_"):
+                plant_id = data.split("_", 1)[1]
+                for plant in PLANTS:
+                    if get_plant_id(plant) == plant_id:
+                        reply = format_plant_info_extended(plant)
+                        bot.send_message(chat_id=chat_id, text=reply, parse_mode=ParseMode.HTML)
+                        break
+                else:
+                    bot.send_message(chat_id=chat_id, text="⚠️ Растение не найдено.")
+                return JSONResponse(content={"status": "ok"})
+
+            if data == "catalog_garden":
+                bot.send_message(chat_id=chat_id, text="🪴 Растения для сада:\n(здесь будет список из базы)")
+                return JSONResponse(content={"status": "ok"})
+
+            if data == "catalog_indoor":
+                bot.send_message(chat_id=chat_id, text="🏠 Комнатные растения:\n(здесь будет список из базы)")
+                return JSONResponse(content={"status": "ok"})
+
         return JSONResponse(content={"status": "ok"})
 
     except TelegramError as e:
