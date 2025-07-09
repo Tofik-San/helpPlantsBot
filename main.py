@@ -41,6 +41,7 @@ async def telegram_webhook(request: Request):
         logger.info(f"📩 Получен запрос: {data}")
         update = Update.de_json(data, bot)
 
+        # === Обработка сообщений ===
         if update.message and update.message.text:
             chat_id = update.message.chat.id
             text = update.message.text.strip()
@@ -75,7 +76,7 @@ async def telegram_webhook(request: Request):
             if text == "📢 Канал":
                 bot.send_message(
                     chat_id=chat_id,
-                    text="🔗 Переходите в канал, что следить за новостями и обновлением Бота BOTanik:\nhttps://t.me/+g4KcJjJAR7pkZWJi",
+                    text="🔗 Переходите в канал, чтобы следить за новостями:\nhttps://t.me/+g4KcJjJAR7pkZWJi",
                     disable_web_page_preview=True,
                     reply_markup=info_keyboard
                 )
@@ -95,6 +96,21 @@ async def telegram_webhook(request: Request):
                     bot.send_message(chat_id=chat_id, text=f"{reply}\n\n⚠️ Изображение не найдено.", parse_mode=ParseMode.HTML, reply_markup=inline_keyboard)
             else:
                 bot.send_message(chat_id=chat_id, text="🌱 Растение не найдено. Кликните Каталог.", reply_markup=info_keyboard)
+
+        # === Обработка callback_query (кнопок) ===
+        elif update.callback_query:
+            callback = update.callback_query
+            chat_id = callback.from_user.id
+            callback_data = callback.data
+            logger.info(f"🪝 Callback: {chat_id} → {callback_data}")
+
+            if callback_data == "catalog_garden":
+                bot.send_message(chat_id=chat_id, text="🌿 Садовые растения:\n• Роза\n• Гортензия\n• Сирень")
+            elif callback_data == "catalog_indoor":
+                bot.send_message(chat_id=chat_id, text="🏠 Комнатные растения:\n• Монстера\n• Фикус\n• Драцена")
+            elif callback_data.startswith("details_"):
+                # Для будущей реализации подробной информации по ID
+                bot.send_message(chat_id=chat_id, text="📋 Подробнее о растении будет доступно позже.")
 
         return JSONResponse(content={"status": "ok"})
 
