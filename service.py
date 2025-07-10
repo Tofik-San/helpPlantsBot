@@ -1,20 +1,17 @@
 from sqlalchemy import create_engine, text
 import os
 
-# Получение DATABASE_URL из переменных Railway
 DATABASE_URL = os.environ.get("DATABASE_URL")
-
-# Инициализация движка SQLAlchemy
 engine = create_engine(DATABASE_URL)
 
 def get_plant_data(name=None, category_filter=None):
     with engine.connect() as connection:
         if category_filter:
             query = text("SELECT * FROM plants WHERE category_type ILIKE :category")
-            result = connection.execute(query, {"category": f"%{category_filter}%"})
+            result = connection.execute(query, {"category": f"%{category_filter}%"}).mappings()
         elif name:
             query = text("SELECT * FROM plants WHERE name ILIKE :name")
-            result = connection.execute(query, {"name": f"%{name}%"})
+            result = connection.execute(query, {"name": f"%{name}%"}).mappings()
         else:
             return None
 
