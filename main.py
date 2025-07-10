@@ -6,7 +6,6 @@ from telegram import (
     Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup, ParseMode
 )
 from service import get_plant_data, get_bot_info
-from html import escape
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -25,9 +24,8 @@ def start(update):
         [InlineKeyboardButton("📢 Канал", url="https://t.me/+g4KcJjJAR7pkZWJi")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    bot.send_message(
-        chat_id=update.message.chat.id,
-        text="🌿 Привет! Я бот по растениям.\nВыберите категорию или перейдите в канал:",
+    update.message.reply_text(
+        "🌿 Привет! Я бот по растениям.\nВыберите категорию или перейдите в канал:",
         reply_markup=reply_markup
     )
 
@@ -35,9 +33,8 @@ def start(update):
 def handle_message(update):
     text = update.message.text.strip()
     if text == "📢 Канал":
-        bot.send_message(
-            chat_id=update.message.chat.id,
-            text="🔗 Наш канал: https://t.me/+g4KcJjJAR7pkZWJi"
+        update.message.reply_text(
+            "🔗 Наш канал: https://t.me/+g4KcJjJAR7pkZWJi"
         )
         return
 
@@ -45,7 +42,7 @@ def handle_message(update):
     if plant_list:
         plant = plant_list[0]
         photo_url = f"https://tofik-san.github.io/helpPlantsBot/images/{plant['image']}"
-        caption = f"<b>{escape(plant['name'])}</b>\n{escape(plant['short_description'])}"
+        caption = f"<b>{plant['name']}</b>\n{plant['short_description']}"
         keyboard = [[InlineKeyboardButton("📖 Подробнее", callback_data=f"details_{plant['id']}")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         bot.send_photo(
@@ -56,15 +53,12 @@ def handle_message(update):
             parse_mode="HTML"
         )
     else:
-        bot.send_message(
-            chat_id=update.message.chat.id,
-            text="🌿 Растение не найдено. Попробуйте другое название."
-        )
+        update.message.reply_text("🌿 Растение не найдено. Попробуйте другое название.")
 
 # Обработка кнопок
 def button_callback(update):
     query = update.callback_query
-    bot.answer_callback_query(callback_query_id=query.id)
+    query.answer()
     data = query.data
 
     if data.startswith("category_"):
@@ -76,16 +70,9 @@ def button_callback(update):
                 for plant in plants
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
-            bot.send_message(
-                chat_id=query.message.chat.id,
-                text="Выберите растение:",
-                reply_markup=reply_markup
-            )
+            query.message.reply_text("Выберите растение:", reply_markup=reply_markup)
         else:
-            bot.send_message(
-                chat_id=query.message.chat.id,
-                text="В этой категории пока нет растений."
-            )
+            query.message.reply_text("В этой категории пока нет растений.")
 
     elif data.startswith("plant_"):
         plant_id = int(data.split("_")[1])
@@ -93,7 +80,7 @@ def button_callback(update):
         if plant_list:
             plant = plant_list[0]
             photo_url = f"https://tofik-san.github.io/helpPlantsBot/images/{plant['image']}"
-            caption = f"<b>{escape(plant['name'])}</b>\n{escape(plant['short_description'])}"
+            caption = f"<b>{plant['name']}</b>\n{plant['short_description']}"
             keyboard = [[InlineKeyboardButton("📖 Подробнее", callback_data=f"details_{plant['id']}")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             bot.send_photo(
@@ -104,10 +91,7 @@ def button_callback(update):
                 parse_mode="HTML"
             )
         else:
-            bot.send_message(
-                chat_id=query.message.chat.id,
-                text="Ошибка при получении информации о растении."
-            )
+            query.message.reply_text("Ошибка при получении информации о растении.")
 
     elif data.startswith("details_"):
         plant_id = int(data.split("_")[1])
@@ -115,57 +99,34 @@ def button_callback(update):
         if plant_list:
             plant = plant_list[0]
             detailed_info = (
-                f"🌿 <b>Тип:</b> {escape(plant['category_type'])}\n"
-                f"☀️ <b>Свет:</b> {escape(plant['light'])}\n"
-                f"💧 <b>Полив:</b> {escape(plant['watering'])}\n"
-                f"🌡️ <b>Температура:</b> {escape(plant['temperature'])}\n"
-                f"🪴 <b>Почва:</b> {escape(plant['soil'])}\n"
-                f"🌻 <b>Удобрения:</b> {escape(plant['fertilizer'])}\n"
-                f"✂️ <b>Уход:</b> {escape(plant['care_tip'])}"
+                f"🌿 <b>Тип:</b> {plant['category_type']}\n"
+                f"☀️ <b>Свет:</b> {plant['light']}\n"
+                f"💧 <b>Полив:</b> {plant['watering']}\n"
+                f"🌡️ <b>Температура:</b> {plant['temperature']}\n"
+                f"🪴 <b>Почва:</b> {plant['soil']}\n"
+                f"🌻 <b>Удобрения:</b> {plant['fertilizer']}\n"
+                f"✂️ <b>Уход:</b> {plant['care_tip']}"
             )
             keyboard = [[InlineKeyboardButton("📖 Статья", callback_data=f"insights_{plant['id']}")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
-            bot.send_message(
-                chat_id=query.message.chat.id,
-                text=detailed_info,
-                parse_mode="HTML",
-                reply_markup=reply_markup
-            )
+            query.message.reply_text(detailed_info, parse_mode="HTML", reply_markup=reply_markup)
         else:
-            bot.send_message(
-                chat_id=query.message.chat.id,
-                text="Не удалось получить подробную информацию."
-            )
+            query.message.reply_text("Не удалось получить подробную информацию.")
 
     elif data.startswith("insights_"):
         plant_id = int(data.split("_")[1])
         plant_list = get_plant_data(id_filter=plant_id)
         if plant_list:
             plant = plant_list[0]
-            raw_text = plant['insights'].replace("\\n", "\n")
-            safe_text = escape(raw_text).replace("\n", "<br>")
-            bot.send_message(
-                chat_id=query.message.chat.id,
-                text=safe_text,
-                parse_mode="HTML"
-            )
+            insights_text = plant['insights']
+            query.message.reply_text(insights_text)
         else:
-            bot.send_message(
-                chat_id=query.message.chat.id,
-                text="Не удалось получить статью для этого растения."
-            )
-
-    else:
-        bot.send_message(
-            chat_id=query.message.chat.id,
-            text="Неизвестная команда."
-        )
+            query.message.reply_text("Не удалось получить статью для этого растения.")
 
 # Webhook
 @app.post("/webhook")
 async def webhook(request: Request):
     data = await request.json()
-    logger.info(f"📩 Пришёл update: {data}")
     update = Update.de_json(data, bot)
 
     if update.message:
