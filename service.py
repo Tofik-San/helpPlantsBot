@@ -4,9 +4,12 @@ import os
 DATABASE_URL = os.environ.get("DATABASE_URL")
 engine = create_engine(DATABASE_URL)
 
-def get_plant_data(name=None, category_filter=None):
+def get_plant_data(name=None, category_filter=None, id_filter=None):
     with engine.connect() as connection:
-        if category_filter:
+        if id_filter:
+            query = text("SELECT * FROM plants WHERE id = :id")
+            result = connection.execute(query, {"id": id_filter}).mappings()
+        elif category_filter:
             query = text("SELECT * FROM plants WHERE category_type ILIKE :category")
             result = connection.execute(query, {"category": f"%{category_filter}%"}).mappings()
         elif name:
