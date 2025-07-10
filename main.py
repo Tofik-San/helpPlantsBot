@@ -1,10 +1,9 @@
 import logging
 import os
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse
 from telegram import Bot, Update, KeyboardButton, ReplyKeyboardMarkup, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Dispatcher, MessageHandler, Filters, CallbackQueryHandler
-from service import get_plant_data, format_plant_info_base, format_plant_info_extended, get_bot_info
+from telegram.ext import Dispatcher, CommandHandler, MessageHandler, Filters
+from service import get_plant_data, format_plant_info_base, format_plant_info_extended
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -13,67 +12,71 @@ TELEGRAM_TOKEN = os.getenv("BOT_TOKEN")
 bot = Bot(token=TELEGRAM_TOKEN)
 app = FastAPI()
 
-dispatcher = Dispatcher(bot=bot, update_queue=None, workers=4, use_context=True)
+dispatcher = Dispatcher(bot, None, use_context=True)
 
-def handle_message(update: Update, context):
-    text = update.message.text.lower()
+# Кнопки категорий
+category_buttons = [
+    [KeyboardButton("🪴 Суккуленты"), KeyboardButton("🌱 Неприхотливые зелёные")],
+    [KeyboardButton("🌸 Цветущие"), KeyboardButton("🌿 Лианы")]
+]
+category_keyboard = ReplyKeyboardMarkup(category_buttons, resize_keyboard=True)
 
-    if text in ["🌵 суккуленты", "🌿 неприхотливые зелёные", "🌺 цветущие", "🍃 лианы"]:
-        plants = get_plant_data()
-        category = text.split()[1]
-        matching_plants = [plant for plant in plants if category in plant.get('category_type', '').lower()]
+# /start
+async def start(update: Update, context):
+    chat_id = update.effective_chat.id
+    await context.bot.send_message(
+        chat_id=chat_id,
+        text="🌿 Привет! Я бот по растениям.\nВыберите категорию:",
+        reply_markup=category_keyboard
+    )
 
-        if matching_plants:
-            buttons = [[InlineKeyboardButton(plant['name'], callback_data=f"plant_{plant['id']}")] for plant in matching_plants]
-            reply_markup = InlineKeyboardMarkup(buttons)
-            update.message.reply_text(f"Выберите растение из категории {text}:", reply_markup=reply_markup)
-        else:
-            update.message.reply_text(f"В категории {text} пока нет доступных растений.")
+# Сообщения
+async def handle_message(update: Update, context):
+    chat_id = update.effective_chat.id
+    text = update.message.text.strip().lower()
 
+    # Проверяем категории
+    if "суккуленты" in text:
+        plants = get_plant_data(category_filter="Суккуленты")
+        names = [p['name'] for p in plants]
+        buttons = [[KeyboardButton(name)] for name in names]
+        markup = ReplyKeyboardMarkup(buttons, resize_keyboard=True)
+        await context.bot.send_message(chat_id=chat_id, text="Выберите растение:", reply_markup=markup)
+        return
+
+    # Показываем карточку по названию
+    plant = get_plant_data(name_filter=text)
+    if plant:
+        photo_url = f"https://tofik-san.github.io/helpPlantsBot/images/{plant['image']}"
+        caption = format_plant_info_base(plant)
+        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("📄 Подробнее", callback_data=f"details_{plant['id']}")]])
+        await context.bot.send_photo(chat_id=chat_id, photo=photo_url, caption=caption, parse_mode='HTML', reply_markup=keyboard)
     else:
-        keyboard = [
-            [KeyboardButton("🌵 Суккуленты")],
-            [KeyboardButton("🌿 Неприхотливые зелёные")],
-            [KeyboardButton("🌺 Цветущие")],
-            [KeyboardButton("🍃 Лианы")]
-        ]
-        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
-        update.message.reply_text("Привет! 🌿 Выберите категорию:", reply_markup=reply_markup)
+        await context.bot.send_message(chat_id=chat_id, text="🌿 Растение не найдено. Попробуйте другое название.")
 
-def handle_callback_query(update: Update, context):
+# Подробнее
+async def button_callback(update: Update, context):
     query = update.callback_query
-    query.answer()
     data = query.data
+    await query.answer()
 
-    if data.startswith("plant_"):
+    if data.startswith("details_"):
         plant_id = int(data.split("_")[1])
-        plant = get_plant_data(plant_id)
-
+        plant = get_plant_data(id_filter=plant_id)
         if plant:
-            caption, image_path = format_plant_info_base(plant)
-            button = InlineKeyboardMarkup([[InlineKeyboardButton("📖 Статья", callback_data=f"details_{plant_id}")]])
-            context.bot.send_photo(chat_id=query.message.chat_id, photo=image_path, caption=caption, parse_mode='HTML', reply_markup=button)
-        else:
-            query.edit_message_text("Не удалось найти растение.")
+            text = format_plant_info_extended(plant)
+            await query.message.reply_text(text, parse_mode='HTML')
 
-    elif data.startswith("details_"):
-        plant_id = int(data.split("_")[1])
-        plant = get_plant_data(plant_id)
-        if plant:
-            extended_info = format_plant_info_extended(plant)
-            query.edit_message_text(extended_info, parse_mode='HTML')
-        else:
-            query.edit_message_text("Не удалось найти подробности по растению.")
-
+# Регистрация хендлеров
+dispatcher.add_handler(CommandHandler("start", start))
 dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
-dispatcher.add_handler(CallbackQueryHandler(handle_callback_query))
+dispatcher.add_handler(MessageHandler(Filters.callback_query, button_callback))
 
-@app.post('/webhook')
-async def webhook_handler(request: Request):
-    data = await request.json()
-    update = Update.de_json(data, bot)
-    dispatcher.process_update(update)
-    return JSONResponse(content={"status": "ok"})
+@app.post("/webhook")
+async def webhook(request: Request):
+    update = Update.de_json(await request.json(), bot)
+    await dispatcher.process_update(update)
+    return {"ok": True}
 
 if __name__ == "__main__":
     import uvicorn
