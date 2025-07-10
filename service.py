@@ -1,27 +1,43 @@
 from sqlalchemy import create_engine, text
 import os
 
-def get_plant_data(name_filter=None, id_filter=None, category_type=None):
-    DATABASE_URL = os.getenv("DATABASE_URL")
-    engine = create_engine(DATABASE_URL)
+# Получение DATABASE_URL из переменных Railway
+DATABASE_URL = os.environ.get("DATABASE_URL")
 
+# Инициализация движка SQLAlchemy
+engine = create_engine(DATABASE_URL)
+
+def get_plant_data(name=None, category_filter=None):
     with engine.connect() as connection:
-        if id_filter:
-            query = text("SELECT * FROM plants WHERE id = :id")
-            result = connection.execute(query, {"id": id_filter}).fetchone()
-            return dict(result) if result else None
-        elif name_filter:
-            query = text("SELECT * FROM plants WHERE LOWER(name) LIKE :name")
-            result = connection.execute(query, {"name": f"%{name_filter.lower()}%"}).fetchone()
-            return dict(result) if result else None
-        elif category_type:
-            query = text("SELECT * FROM plants WHERE category_type LIKE :category")
-            result = connection.execute(query, {"category": f"%{category_type}%"})
-            return [dict(row) for row in result]
+        if category_filter:
+            query = text("SELECT * FROM plants WHERE category_type ILIKE :category")
+            result = connection.execute(query, {"category": f"%{category_filter}%"})
+        elif name:
+            query = text("SELECT * FROM plants WHERE name ILIKE :name")
+            result = connection.execute(query, {"name": f"%{name}%"})
         else:
-            query = text("SELECT * FROM plants")
-            result = connection.execute(query)
-            return [dict(row) for row in result]
+            return None
+
+        plants = []
+        for row in result:
+            plant = {
+                "id": row["id"],
+                "image": row["image"],
+                "name": row["name"],
+                "latin_name": row["latin_name"],
+                "short_description": row["short_description"],
+                "category_type": row["category_type"],
+                "light": row["light"],
+                "watering": row["watering"],
+                "temperature": row["temperature"],
+                "soil": row["soil"],
+                "fertilizer": row["fertilizer"],
+                "care_tip": row["care_tip"],
+                "insights": row["insights"]
+            }
+            plants.append(plant)
+
+        return plants if plants else None
 
 def format_plant_info_base(plant):
     return (
@@ -42,6 +58,6 @@ def format_plant_info_extended(plant):
 
 def get_bot_info():
     return (
-        "🌿 <b>Бот по растениям</b>\n"
-        "Введите название растения или выберите категорию для получения подробной информации."
+        "🌿 Этот бот поможет тебе узнать всё о растениях.\n\n"
+        "📌 Отправь название растения или выбери категорию, чтобы получить карточку с уходом, фото и советами."
     )
