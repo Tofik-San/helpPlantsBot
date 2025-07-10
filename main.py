@@ -70,9 +70,16 @@ def button_callback(update):
                 for plant in plants
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
-            query.message.reply_text("Выберите растение:", reply_markup=reply_markup)
+            bot.send_message(
+                chat_id=query.message.chat.id,
+                text="Выберите растение:",
+                reply_markup=reply_markup
+            )
         else:
-            query.message.reply_text("В этой категории пока нет растений.")
+            bot.send_message(
+                chat_id=query.message.chat.id,
+                text="В этой категории пока нет растений."
+            )
 
     elif data.startswith("plant_"):
         plant_id = int(data.split("_")[1])
@@ -91,7 +98,10 @@ def button_callback(update):
                 parse_mode="HTML"
             )
         else:
-            query.message.reply_text("Ошибка при получении информации о растении.")
+            bot.send_message(
+                chat_id=query.message.chat.id,
+                text="Ошибка при получении информации о растении."
+            )
 
     elif data.startswith("details_"):
         plant_id = int(data.split("_")[1])
@@ -109,19 +119,34 @@ def button_callback(update):
             )
             keyboard = [[InlineKeyboardButton("📖 Статья", callback_data=f"insights_{plant['id']}")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
-            query.message.reply_text(detailed_info, parse_mode="HTML", reply_markup=reply_markup)
+            bot.send_message(
+                chat_id=query.message.chat.id,
+                text=detailed_info,
+                parse_mode="HTML",
+                reply_markup=reply_markup
+            )
         else:
-            query.message.reply_text("Не удалось получить подробную информацию.")
+            bot.send_message(
+                chat_id=query.message.chat.id,
+                text="Не удалось получить подробную информацию."
+            )
 
     elif data.startswith("insights_"):
         plant_id = int(data.split("_")[1])
         plant_list = get_plant_data(id_filter=plant_id)
         if plant_list:
             plant = plant_list[0]
-            insights_text = plant['insights']
-            query.message.reply_text(insights_text)
+            # Заменяем \n на \n для реальных переносов в Telegram
+            insights_text = plant['insights'].replace("\\n", "\n")
+            bot.send_message(
+                chat_id=query.message.chat.id,
+                text=insights_text
+            )
         else:
-            query.message.reply_text("Не удалось получить статью для этого растения.")
+            bot.send_message(
+                chat_id=query.message.chat.id,
+                text="Не удалось получить статью для этого растения."
+            )
 
 # Webhook
 @app.post("/webhook")
