@@ -2,8 +2,7 @@ import logging
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from telegram import (
-    Bot, Update, KeyboardButton, ReplyKeyboardMarkup,
-    InlineKeyboardButton, InlineKeyboardMarkup, ParseMode
+    Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup, ParseMode
 )
 from telegram.error import TelegramError
 from telegram.ext import Dispatcher, CommandHandler, MessageHandler, Filters, CallbackQueryHandler
@@ -19,31 +18,21 @@ app = FastAPI()
 
 dispatcher = Dispatcher(bot=bot, update_queue=None, workers=4, use_context=True)
 
-# Команда /start
 def start(update: Update, context):
     user = update.effective_user
     message = f"Привет, {user.first_name or 'садовод'}! Отправь название растения, чтобы получить карточку ухода."
     context.bot.send_message(chat_id=update.effective_chat.id, text=message)
 
-# Сообщения с текстом
 def handle_message(update: Update, context):
     query = update.message.text.strip()
     plant = get_plant_data(query)
 
     if plant:
-        # Формируем текст
         info_text = format_plant_info_base(plant)
-
-        # Формируем URL изображения
         image_url = f"https://tofik-san.github.io/helpPlantsBot/images/{plant['image']}"
-
-        # Формируем кнопки
-        keyboard = [
-            [InlineKeyboardButton("📄 Статья", callback_data=f"extended_{plant['id']}")]
-        ]
+        keyboard = [[InlineKeyboardButton("📄 Статья", callback_data=f"extended_{plant['id']}")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        # Отправляем фото с подписью
         context.bot.send_photo(
             chat_id=update.effective_chat.id,
             photo=image_url,
@@ -54,7 +43,6 @@ def handle_message(update: Update, context):
     else:
         context.bot.send_message(chat_id=update.effective_chat.id, text="🌱 Растение не найдено. Попробуйте другое название.")
 
-# Обработка кнопки "Статья"
 def handle_callback(update: Update, context):
     query = update.callback_query
     data = query.data
@@ -71,13 +59,11 @@ def handle_callback(update: Update, context):
 
     query.answer()
 
-# Обработчик ошибок
 def error_handler(update: object, context):
     logger.error(msg="Ошибка при обработке обновления:", exc_info=context.error)
 
-# Роуты FastAPI для webhook
-@app.post(f"/{TELEGRAM_TOKEN}")
-async def webhook(request: Request):
+@app.post("/webhook")
+async def telegram_webhook(request: Request):
     json_data = await request.json()
     update = Update.de_json(json_data, bot)
     dispatcher.process_update(update)
@@ -87,7 +73,6 @@ async def webhook(request: Request):
 def root():
     return {"message": "helpPlantsBot работает!"}
 
-# Регистрируем хендлеры
 dispatcher.add_handler(CommandHandler("start", start))
 dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
 dispatcher.add_handler(CallbackQueryHandler(handle_callback))
