@@ -41,12 +41,6 @@ def start(update):
         text="🌿 Привет! Я бот по растениям.\nВыберите категорию:",
         reply_markup=reply_markup
     )
-    # Отправляем только клавиатуру без текста
-    bot.send_message(
-        chat_id=update.message.chat.id,
-        text="\u200b",  # zero-width space чтобы отправить пустое сообщение
-        reply_markup=get_persistent_keyboard()
-    )
 
 # Обработка текстовых кнопок (Канал, О проекте, Рестарт)
 def handle_static_buttons(update):
@@ -56,12 +50,14 @@ def handle_static_buttons(update):
     elif text == "ℹ️ О проекте":
         bot.send_message(
             chat_id=update.message.chat.id,
-            text="ℹ️ Этот бот помогает выбирать и ухаживать за растениями. Подробности добавлю позже."
+            text="ℹ️ Этот бот помогает выбирать и ухаживать за растениями. Подробности добавлю позже.",
+            reply_markup=get_persistent_keyboard()
         )
     elif text == "📢 Канал":
         bot.send_message(
             chat_id=update.message.chat.id,
-            text="📢 Наш канал: https://t.me/+g4KcJjJAR7pkZWJi"
+            text="📢 Наш канал: https://t.me/+g4KcJjJAR7pkZWJi",
+            reply_markup=get_persistent_keyboard()
         )
     else:
         handle_message(update)
@@ -109,7 +105,8 @@ def button_callback(update):
         else:
             bot.send_message(
                 chat_id=query.message.chat.id,
-                text="В этой категории пока нет растений."
+                text="В этой категории пока нет растений.",
+                reply_markup=get_persistent_keyboard()
             )
 
     elif data.startswith("plant_"):
@@ -131,7 +128,8 @@ def button_callback(update):
         else:
             bot.send_message(
                 chat_id=query.message.chat.id,
-                text="Ошибка при получении информации о растении."
+                text="Ошибка при получении информации о растении.",
+                reply_markup=get_persistent_keyboard()
             )
 
     elif data.startswith("details_"):
@@ -159,7 +157,8 @@ def button_callback(update):
         else:
             bot.send_message(
                 chat_id=query.message.chat.id,
-                text="Не удалось получить подробную информацию."
+                text="Не удалось получить подробную информацию.",
+                reply_markup=get_persistent_keyboard()
             )
 
     elif data.startswith("insights_"):
@@ -170,12 +169,14 @@ def button_callback(update):
             insights_text = plant['insights'].replace("\\n", "\n")
             bot.send_message(
                 chat_id=query.message.chat.id,
-                text=insights_text
+                text=insights_text,
+                reply_markup=get_persistent_keyboard()
             )
         else:
             bot.send_message(
                 chat_id=query.message.chat.id,
-                text="Не удалось получить статью для этого растения."
+                text="Не удалось получить статью для этого растения.",
+                reply_markup=get_persistent_keyboard()
             )
 
 # Webhook
