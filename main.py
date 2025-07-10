@@ -45,7 +45,7 @@ def handle_message(update: Update, context):
         return
 
     # Показываем карточку по названию
-    plant = get_plant_data(name_filter=text)
+    plant = get_plant_data(name=text)
     if plant:
         photo_url = f"https://tofik-san.github.io/helpPlantsBot/images/{plant['image']}"
         caption = format_plant_info_base(plant)
