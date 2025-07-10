@@ -1,72 +1,44 @@
-import json
+from sqlalchemy import create_engine, text
+import os
 
-with open("plants.json", encoding="utf-8") as f:
-    PLANTS = json.load(f)
+DATABASE_URL = os.getenv("DATABASE_URL")
+engine = create_engine(DATABASE_URL)
 
-def get_plant_data(query: str) -> dict | None:
-    query = query.lower()
-    for plant in PLANTS:
-        if query in plant["name"].lower():
-            return plant
-    return None
+def get_plant_data(query: str, by_id=False) -> dict | None:
+    with engine.connect() as conn:
+        if by_id:
+            stmt = text("SELECT * FROM plants WHERE id = :id")
+            result = conn.execute(stmt, {"id": int(query)}).mappings().first()
+        else:
+            stmt = text("SELECT * FROM plants WHERE LOWER(name) LIKE :name")
+            result = conn.execute(stmt, {"name": f"%{query.lower()}%"}).mappings().first()
+        return dict(result) if result else None
 
 def format_plant_info_base(plant):
     return (
         f"<b>{plant.get('name')}</b>\n"
-        f"Тип: {plant.get('type')}\n"
-        f"Климат: {plant.get('climate')}\n\n"
-        f"🌱 Период роста: {plant.get('growth_period')}\n"
-        f"⚡️ Скорость роста: {plant.get('growth_rate')}"
+        f"{plant.get('short_description')}\n\n"
+        f"🌿 <b>Тип:</b> {plant.get('category_type')}\n"
+        f"☀️ <b>Свет:</b> {plant.get('light')}\n"
+        f"💧 <b>Полив:</b> {plant.get('watering')}\n"
+        f"🌡️ <b>Температура:</b> {plant.get('temperature')}\n"
+        f"🪴 <b>Почва:</b> {plant.get('soil')}\n"
+        f"🌻 <b>Удобрения:</b> {plant.get('fertilizer')}\n"
+        f"✂️ <b>Уход:</b> {plant.get('care_tip')}"
     )
 
 def format_plant_info_extended(plant):
-    care = plant.get("care", {})
-    pest_control = "\n".join(f"• {item}" for item in plant.get("pest_control", []))
-    fertilizers = "\n".join(f"• {item}" for item in plant.get("fertilizers", []))
-
-    # Убираем None в отображении
-    compatibility = f"❤️ Сочетается с: {plant.get('compatible_with')}\n" if plant.get('compatible_with') else ""
-    variety = f"🌿 Сорта: {plant.get('varieties')}\n" if plant.get('varieties') else ""
-
-    return (
-        f"{compatibility}"
-        f"{variety}"
-        f"☀️ Свет: {care.get('light')}\n"
-        f"💧 Полив: {care.get('watering')}\n"
-        f"🌱 Почва: {care.get('soil')}\n"
-        f"✂️ Обрезка: {care.get('pruning')}\n\n"
-        f"🛡️ Защита от вредителей:\n{pest_control}\n\n"
-        f"🌻 Удобрения:\n{fertilizers}\n\n"
-        f"🪴 Горшки и корни: {plant.get('pot_and_roots')}\n"
-        f"✅ Использование: {plant.get('usage')}\n\n"
-        f"📌 Интересный факт: {plant.get('interesting_fact')}"
-    )
+    insights = plant.get("insights")
+    if insights:
+        return f"<b>📄 Подробная статья по {plant.get('name')}</b>\n\n{insights}"
+    else:
+        return "Для этого растения пока нет расширенной статьи."
 
 def get_bot_info() -> str:
     return (
-        "🌱 Тыкаешь в фотки, гадаешь по листьям? Хватит. Просто напиши название — бот покажет всё:\n\n"
-        "• как поливать, когда обрезать\n"
-        "• где сажать, как не угробить\n"
-        "• фото, лайфхаки, интересные факты\n\n"
-        "⚡ Быстро. Без тупых форм, рекламы и логинов.\n"
-        "Один бот — весь каталог у тебя в чате.\n\n"
-        "🧠 В разработке:\n"
-        "• подбор растений под интерьер и климат\n"
-        "• экспорт в Excel и PDF\n"
-        "• кастомизация под бренд, сайт или соцсеть\n"
-        "• подписка для питомников и магазинов\n\n"
-        "🏪 У вас свой ассортимент?\n"
-        "Бот легко адаптируется под базу магазина или питомника:\n"
-        "названия, описания, цены, фото — всё можно встроить.\n\n"
-        "🎯 Другая ниша?\n"
-        "От растений до ремонта, от фитнеса до финтеха —\n"
-        "сделаем чат-бота под любое направление или бизнес-задачу.\n\n"
-        "🛠️ Используемый стек:\n"
-        "Python · FastAPI · Telegram Bot API · Docker · Railway · OpenAI API · Prompt Engineering\n\n"
-        "🤖 Возможна интеграция GPT‑4o —\n"
-        "новейшей версии с поддержкой текста, изображений и логики.\n"
-        "Может больше, отвечает умнее, обучается на ваших данных.\n\n"
-        "🚀 Бот — часть большого проекта по автоматизации ухода за растениями.\n"
-        "Проверяй, тестируй, делись — или заказывай своего.\n\n"
-        "📩 Связь и заказ: @veryhappyEpta"
+        "🌱 Отправь название растения, чтобы получить карточку ухода и подробную статью.\n"
+        "📸 Бот показывает фото, советы по поливу, освещению и уходу.\n"
+        "👨‍🌾 Подходит для дома, питомников, магазинов.\n\n"
+        "🚀 Работает на Python, FastAPI, PostgreSQL и Telegram Bot API.\n"
+        "Связь: @veryhappyEpta"
     )

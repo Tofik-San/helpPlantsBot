@@ -1,4 +1,3 @@
-
 import logging
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
@@ -7,9 +6,9 @@ from telegram import (
     InlineKeyboardButton, InlineKeyboardMarkup, ParseMode
 )
 from telegram.error import TelegramError
+from telegram.ext import Dispatcher, CommandHandler, MessageHandler, Filters, CallbackQueryHandler
 from service import get_plant_data, format_plant_info_base, format_plant_info_extended, get_bot_info
 import os
-import json
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -18,157 +17,81 @@ TELEGRAM_TOKEN = os.getenv("BOT_TOKEN")
 bot = Bot(token=TELEGRAM_TOKEN)
 app = FastAPI()
 
-info_keyboard = ReplyKeyboardMarkup(
-    [[
-        KeyboardButton("ℹ️ Инфо о проекте"),
-        KeyboardButton("🛒 Заказать услугу"),
-        KeyboardButton("📚 Каталог"),
-        KeyboardButton("📢 Канал")
-    ]],
-    resize_keyboard=True,
-    one_time_keyboard=False
-)
+dispatcher = Dispatcher(bot=bot, update_queue=None, workers=4, use_context=True)
 
-# Загружаем базу растений
-with open("plants.json", encoding="utf-8") as f:
-    PLANTS = json.load(f)
+# Команда /start
+def start(update: Update, context):
+    user = update.effective_user
+    message = f"Привет, {user.first_name or 'садовод'}! Отправь название растения, чтобы получить карточку ухода."
+    context.bot.send_message(chat_id=update.effective_chat.id, text=message)
 
-# Генерация безопасного идентификатора
-def get_plant_id(plant):
-    return str(abs(hash(plant.get("name"))) % (10 ** 8))
+# Сообщения с текстом
+def handle_message(update: Update, context):
+    query = update.message.text.strip()
+    plant = get_plant_data(query)
 
-@app.post("/webhook")
-async def telegram_webhook(request: Request):
-    try:
-        data = await request.json()
-        logger.info(f"📩 Получен запрос: {data}")
-        update = Update.de_json(data, bot)
+    if plant:
+        # Формируем текст
+        info_text = format_plant_info_base(plant)
 
-        if update.callback_query:
-            query = update.callback_query
-            chat_id = query.message.chat.id
-            callback_data = query.data
+        # Формируем URL изображения
+        image_url = f"https://tofik-san.github.io/helpPlantsBot/images/{plant['image']}"
 
-            if callback_data == "catalog_garden":
-                buttons = []
-                for idx, plant in enumerate(PLANTS):
-                    if "садовое" in plant.get("type", "").lower():
-                        buttons.append([
-                            InlineKeyboardButton(
-                                plant["name"],
-                                callback_data=f"plant_{get_plant_id(plant)}"
-                            )
-                        ])
-                if buttons:
-                    catalog_keyboard = InlineKeyboardMarkup(buttons)
-                    bot.send_message(chat_id=chat_id, text="🪴 Выберите растение для сада:", reply_markup=catalog_keyboard)
-                else:
-                    bot.send_message(chat_id=chat_id, text="❌ В категории 'Сад' пока нет растений.", reply_markup=info_keyboard)
-                return JSONResponse(content={"status": "ok"})
+        # Формируем кнопки
+        keyboard = [
+            [InlineKeyboardButton("📄 Статья", callback_data=f"extended_{plant['id']}")]
+        ]
+        reply_markup = InlineKeyboardMarkup(keyboard)
 
-            if callback_data == "catalog_indoor":
-                buttons = []
-                for idx, plant in enumerate(PLANTS):
-                    if "комнатное" in plant.get("type", "").lower():
-                        buttons.append([
-                            InlineKeyboardButton(
-                                plant["name"],
-                                callback_data=f"plant_{get_plant_id(plant)}"
-                            )
-                        ])
-                if buttons:
-                    catalog_keyboard = InlineKeyboardMarkup(buttons)
-                    bot.send_message(chat_id=chat_id, text="🏠 Выберите комнатное растение:", reply_markup=catalog_keyboard)
-                else:
-                    bot.send_message(chat_id=chat_id, text="❌ В категории 'Комнатные' пока нет растений.", reply_markup=info_keyboard)
-                return JSONResponse(content={"status": "ok"})
+        # Отправляем фото с подписью
+        context.bot.send_photo(
+            chat_id=update.effective_chat.id,
+            photo=image_url,
+            caption=info_text,
+            parse_mode=ParseMode.HTML,
+            reply_markup=reply_markup
+        )
+    else:
+        context.bot.send_message(chat_id=update.effective_chat.id, text="🌱 Растение не найдено. Попробуйте другое название.")
 
-            if callback_data.startswith("plant_"):
-                plant_id = callback_data.replace("plant_", "")
-                plant = next((p for p in PLANTS if get_plant_id(p) == plant_id), None)
-                if plant:
-                    reply = format_plant_info_base(plant)
-                    image_path = f"images/{plant.get('image')}"
-                    inline_keyboard = InlineKeyboardMarkup([
-                        [InlineKeyboardButton("📋 Подробнее", callback_data=f"details_{get_plant_id(plant)}")]
-                    ])
-                    try:
-                        with open(image_path, "rb") as image:
-                            bot.send_photo(chat_id=chat_id, photo=image, caption=reply, parse_mode=ParseMode.HTML, reply_markup=inline_keyboard)
-                    except FileNotFoundError:
-                        bot.send_message(chat_id=chat_id, text=f"{reply}\n\n⚠️ Изображение не найдено.", parse_mode=ParseMode.HTML, reply_markup=inline_keyboard)
-                else:
-                    bot.send_message(chat_id=chat_id, text="❌ Растение не найдено.", reply_markup=info_keyboard)
-                return JSONResponse(content={"status": "ok"})
+# Обработка кнопки "Статья"
+def handle_callback(update: Update, context):
+    query = update.callback_query
+    data = query.data
 
-            if callback_data.startswith("details_"):
-                plant_id = callback_data.replace("details_", "")
-                plant = next((p for p in PLANTS if get_plant_id(p) == plant_id), None)
-                if plant:
-                    reply = format_plant_info_extended(plant)
-                    bot.send_message(chat_id=chat_id, text=reply, parse_mode=ParseMode.HTML, reply_markup=info_keyboard)
-                else:
-                    bot.send_message(chat_id=chat_id, text="❌ Растение не найдено.", reply_markup=info_keyboard)
-                return JSONResponse(content={"status": "ok"})
+    if data.startswith("extended_"):
+        plant_id = data.replace("extended_", "")
+        plant = get_plant_data(plant_id, by_id=True)
 
-        if update.message and update.message.text:
-            chat_id = update.message.chat.id
-            text = update.message.text.strip()
-            logger.info(f"🗣 Пользователь: {chat_id} → {text}")
+        if plant:
+            extended_info = format_plant_info_extended(plant)
+            query.message.reply_text(extended_info, parse_mode=ParseMode.HTML)
+        else:
+            query.message.reply_text("❌ Не удалось найти информацию.")
 
-            if text == "/start":
-                bot.send_message(chat_id=chat_id, text="🌿Напишите название растения, и бот покажет полную карточку с фото и советами.", parse_mode=ParseMode.HTML, reply_markup=info_keyboard)
-                return JSONResponse(content={"status": "ok"})
+    query.answer()
 
-            if text == "ℹ️ Инфо о проекте":
-                bot_info = get_bot_info()
-                bot.send_message(chat_id=chat_id, text=bot_info, parse_mode=ParseMode.HTML)
-                return JSONResponse(content={"status": "ok"})
+# Обработчик ошибок
+def error_handler(update: object, context):
+    logger.error(msg="Ошибка при обработке обновления:", exc_info=context.error)
 
-            if text == "🛒 Заказать услугу":
-                bot.send_message(chat_id=chat_id, text="🛒 Заказ услуги: функция в разработке. Здесь появится описание и кнопка оплаты после диплоя.", parse_mode=ParseMode.HTML, reply_markup=info_keyboard)
-                return JSONResponse(content={"status": "ok"})
+# Роуты FastAPI для webhook
+@app.post(f"/{TELEGRAM_TOKEN}")
+async def webhook(request: Request):
+    json_data = await request.json()
+    update = Update.de_json(json_data, bot)
+    dispatcher.process_update(update)
+    return JSONResponse(content={"ok": True})
 
-            if text == "📚 Каталог":
-                catalog_keyboard = InlineKeyboardMarkup([
-                    [InlineKeyboardButton("🪴 Растения для сада", callback_data="catalog_garden")],
-                    [InlineKeyboardButton("🏠 Комнатные растения", callback_data="catalog_indoor")]
-                ])
-                bot.send_message(chat_id=chat_id, text="📚 Выберите категорию каталога:", reply_markup=catalog_keyboard)
-                return JSONResponse(content={"status": "ok"})
+@app.get("/")
+def root():
+    return {"message": "helpPlantsBot работает!"}
 
-            if text == "📢 Канал":
-                bot.send_message(
-                    chat_id=chat_id,
-                    text="🔗 Наш канал: https://t.me/+g4KcJjJAR7pkZWJi",
-                    disable_web_page_preview=True,
-                    reply_markup=info_keyboard
-                )
-                return JSONResponse(content={"status": "ok"})
-
-            plant = get_plant_data(text)
-            if plant:
-                reply = format_plant_info_base(plant)
-                image_path = f"images/{plant.get('image')}"
-                inline_keyboard = InlineKeyboardMarkup([
-                    [InlineKeyboardButton("📋 Подробнее", callback_data=f"details_{get_plant_id(plant)}")]
-                ])
-                try:
-                    with open(image_path, "rb") as image:
-                        bot.send_photo(chat_id=chat_id, photo=image, caption=reply, parse_mode=ParseMode.HTML, reply_markup=inline_keyboard)
-                except FileNotFoundError:
-                    bot.send_message(chat_id=chat_id, text=f"{reply}\n\n⚠️ Изображение не найдено.", parse_mode=ParseMode.HTML, reply_markup=inline_keyboard)
-            else:
-                bot.send_message(chat_id=chat_id, text="🌱 Растение не найдено. Кликните Каталог.", reply_markup=info_keyboard)
-
-        return JSONResponse(content={"status": "ok"})
-
-    except TelegramError as e:
-        logger.error(f"❌ Ошибка Telegram: {e}")
-        return JSONResponse(content={"status": "error", "details": str(e)}, status_code=500)
-    except Exception as e:
-        logger.error(f"❌ Общая ошибка: {e}")
-        return JSONResponse(content={"status": "error", "details": str(e)}, status_code=500)
+# Регистрируем хендлеры
+dispatcher.add_handler(CommandHandler("start", start))
+dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
+dispatcher.add_handler(CallbackQueryHandler(handle_callback))
+dispatcher.add_error_handler(error_handler)
 
 if __name__ == "__main__":
     import uvicorn
