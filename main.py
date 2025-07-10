@@ -118,8 +118,8 @@ def button_callback(update):
         plant_list = get_plant_data(id_filter=plant_id)
         if plant_list:
             plant = plant_list[0]
-            insights_text = plant['insights']
-            query.message.reply_text(insights_text)
+            insights_text = plant['insights'].replace("\\n", "<br>").replace("\n", "<br>")
+            query.message.reply_text(insights_text, parse_mode="HTML")
         else:
             query.message.reply_text("Не удалось получить статью для этого растения.")
 
