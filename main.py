@@ -107,9 +107,21 @@ def button_callback(update):
                 f"🌻 <b>Удобрения:</b> {plant['fertilizer']}\n"
                 f"✂️ <b>Уход:</b> {plant['care_tip']}"
             )
-            query.message.reply_text(detailed_info, parse_mode="HTML")
+            keyboard = [[InlineKeyboardButton("📖 Статья", callback_data=f"insights_{plant['id']}")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            query.message.reply_text(detailed_info, parse_mode="HTML", reply_markup=reply_markup)
         else:
             query.message.reply_text("Не удалось получить подробную информацию.")
+
+    elif data.startswith("insights_"):
+        plant_id = int(data.split("_")[1])
+        plant_list = get_plant_data(id_filter=plant_id)
+        if plant_list:
+            plant = plant_list[0]
+            insights_text = plant['insights']
+            query.message.reply_text(insights_text)
+        else:
+            query.message.reply_text("Не удалось получить статью для этого растения.")
 
 # Webhook
 @app.post("/webhook")
