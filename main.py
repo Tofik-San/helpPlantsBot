@@ -13,19 +13,6 @@ TELEGRAM_TOKEN = os.getenv("BOT_TOKEN")
 bot = Bot(token=TELEGRAM_TOKEN)
 app = FastAPI()
 
-categories = [
-    [KeyboardButton("🌵 Суккуленты")],
-    [KeyboardButton("🌿 Неприхотливые зелёные")],
-    [KeyboardButton("🌺 Цветущие")],
-    [KeyboardButton("🍃 Лианы")]
-]
-
-@app.on_event("startup")
-async def startup_event():
-    logger.info("Бот запущен и готов к работе.")
-    bot.send_message(chat_id=os.getenv("ADMIN_CHAT_ID"), text="🤖 Бот запущен! Выберите категорию:",
-                     reply_markup=ReplyKeyboardMarkup(categories, resize_keyboard=True))
-
 dispatcher = Dispatcher(bot=bot, update_queue=None, workers=4, use_context=True)
 
 def handle_message(update: Update, context):
@@ -44,7 +31,14 @@ def handle_message(update: Update, context):
             update.message.reply_text(f"В категории {text} пока нет доступных растений.")
 
     else:
-        update.message.reply_text("Введите корректное название категории или выберите из предложенных кнопок.")
+        keyboard = [
+            [KeyboardButton("🌵 Суккуленты")],
+            [KeyboardButton("🌿 Неприхотливые зелёные")],
+            [KeyboardButton("🌺 Цветущие")],
+            [KeyboardButton("🍃 Лианы")]
+        ]
+        reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+        update.message.reply_text("Привет! 🌿 Выберите категорию:", reply_markup=reply_markup)
 
 def handle_callback_query(update: Update, context):
     query = update.callback_query
