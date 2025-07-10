@@ -6,6 +6,7 @@ from telegram import (
     Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup, ParseMode
 )
 from service import get_plant_data, get_bot_info
+from html import escape
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -44,7 +45,7 @@ def handle_message(update):
     if plant_list:
         plant = plant_list[0]
         photo_url = f"https://tofik-san.github.io/helpPlantsBot/images/{plant['image']}"
-        caption = f"<b>{plant['name']}</b>\n{plant['short_description']}"
+        caption = f"<b>{escape(plant['name'])}</b>\n{escape(plant['short_description'])}"
         keyboard = [[InlineKeyboardButton("📖 Подробнее", callback_data=f"details_{plant['id']}")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
         bot.send_photo(
@@ -92,7 +93,7 @@ def button_callback(update):
         if plant_list:
             plant = plant_list[0]
             photo_url = f"https://tofik-san.github.io/helpPlantsBot/images/{plant['image']}"
-            caption = f"<b>{plant['name']}</b>\n{plant['short_description']}"
+            caption = f"<b>{escape(plant['name'])}</b>\n{escape(plant['short_description'])}"
             keyboard = [[InlineKeyboardButton("📖 Подробнее", callback_data=f"details_{plant['id']}")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
             bot.send_photo(
@@ -114,13 +115,13 @@ def button_callback(update):
         if plant_list:
             plant = plant_list[0]
             detailed_info = (
-                f"🌿 <b>Тип:</b> {plant['category_type']}\n"
-                f"☀️ <b>Свет:</b> {plant['light']}\n"
-                f"💧 <b>Полив:</b> {plant['watering']}\n"
-                f"🌡️ <b>Температура:</b> {plant['temperature']}\n"
-                f"🪴 <b>Почва:</b> {plant['soil']}\n"
-                f"🌻 <b>Удобрения:</b> {plant['fertilizer']}\n"
-                f"✂️ <b>Уход:</b> {plant['care_tip']}"
+                f"🌿 <b>Тип:</b> {escape(plant['category_type'])}\n"
+                f"☀️ <b>Свет:</b> {escape(plant['light'])}\n"
+                f"💧 <b>Полив:</b> {escape(plant['watering'])}\n"
+                f"🌡️ <b>Температура:</b> {escape(plant['temperature'])}\n"
+                f"🪴 <b>Почва:</b> {escape(plant['soil'])}\n"
+                f"🌻 <b>Удобрения:</b> {escape(plant['fertilizer'])}\n"
+                f"✂️ <b>Уход:</b> {escape(plant['care_tip'])}"
             )
             keyboard = [[InlineKeyboardButton("📖 Статья", callback_data=f"insights_{plant['id']}")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
@@ -141,10 +142,11 @@ def button_callback(update):
         plant_list = get_plant_data(id_filter=plant_id)
         if plant_list:
             plant = plant_list[0]
-            insights_text = plant['insights'].replace("\\n", "<br>").replace("\n", "<br>")
+            raw_text = plant['insights'].replace("\\n", "\n")
+            safe_text = escape(raw_text).replace("\n", "<br>")
             bot.send_message(
                 chat_id=query.message.chat.id,
-                text=insights_text,
+                text=safe_text,
                 parse_mode="HTML"
             )
         else:
