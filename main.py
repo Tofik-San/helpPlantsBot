@@ -35,13 +35,13 @@ def get_category_inline_keyboard():
 
 # /start
 def start(update):
-    # Отправляем сразу клавиатуру внизу с приветствием
+    # Отправляем клавиатуру внизу с приветствием
     bot.send_message(
         chat_id=update.message.chat.id,
         text="🌿 Привет! Я бот по растениям. Выберите категорию ниже или используйте меню внизу 👇",
         reply_markup=get_persistent_keyboard()
     )
-    # Отдельно отправляем inline-категории
+    # Отправляем inline-категории
     bot.send_message(
         chat_id=update.message.chat.id,
         text="Выберите категорию:",
@@ -52,7 +52,12 @@ def start(update):
 def handle_static_buttons(update):
     text = update.message.text.strip()
     if text == "🔄 Рестарт":
-        start(update)
+        # Только категории без приветствия
+        bot.send_message(
+            chat_id=update.message.chat.id,
+            text="Выберите категорию:",
+            reply_markup=get_category_inline_keyboard()
+        )
     elif text == "ℹ️ О проекте":
         bot.send_message(
             chat_id=update.message.chat.id,
@@ -86,7 +91,12 @@ def handle_message(update):
             parse_mode="HTML"
         )
     else:
-        start(update)
+        # Если не найдено, показываем категории без приветствия
+        bot.send_message(
+            chat_id=update.message.chat.id,
+            text="Выберите категорию:",
+            reply_markup=get_category_inline_keyboard()
+        )
 
 # Обработка inline кнопок
 def button_callback(update):
