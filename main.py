@@ -15,7 +15,7 @@ TOKEN = os.getenv("BOT_TOKEN")
 bot = Bot(token=TOKEN)
 app = FastAPI()
 
-# Постоянная клавиатура для низа экрана
+# Постоянная клавиатура внизу экрана
 def get_persistent_keyboard():
     keyboard = [
         [KeyboardButton("🔄 Рестарт"), KeyboardButton("ℹ️ О проекте")],
@@ -23,7 +23,7 @@ def get_persistent_keyboard():
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
-# Генерация inline-клавы категорий
+# Inline клавиатура категорий
 def get_category_inline_keyboard():
     keyboard = [
         [InlineKeyboardButton("🪴 Суккуленты", callback_data="category_Суккуленты")],
@@ -35,14 +35,20 @@ def get_category_inline_keyboard():
 
 # /start
 def start(update):
-    reply_markup = get_category_inline_keyboard()
+    # Отправляем сразу клавиатуру внизу с приветствием
     bot.send_message(
         chat_id=update.message.chat.id,
-        text="🌿 Привет! Я бот по растениям.\nВыберите категорию:",
-        reply_markup=reply_markup
+        text="🌿 Привет! Я бот по растениям. Выберите категорию ниже или используйте меню внизу 👇",
+        reply_markup=get_persistent_keyboard()
+    )
+    # Отдельно отправляем inline-категории
+    bot.send_message(
+        chat_id=update.message.chat.id,
+        text="Выберите категорию:",
+        reply_markup=get_category_inline_keyboard()
     )
 
-# Обработка текстовых кнопок (Канал, О проекте, Рестарт)
+# Обработка кнопок «Канал», «О проекте», «Рестарт»
 def handle_static_buttons(update):
     text = update.message.text.strip()
     if text == "🔄 Рестарт":
@@ -82,7 +88,7 @@ def handle_message(update):
     else:
         start(update)
 
-# Обработка кнопок inline
+# Обработка inline кнопок
 def button_callback(update):
     query = update.callback_query
     query.answer()
