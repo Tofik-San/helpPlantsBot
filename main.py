@@ -70,7 +70,8 @@ async def button_callback(update: Update, context):
 # Регистрация хендлеров
 dispatcher.add_handler(CommandHandler("start", start))
 dispatcher.add_handler(MessageHandler(Filters.text & ~Filters.command, handle_message))
-dispatcher.add_handler(MessageHandler(Filters.callback_query, button_callback))
+dispatcher.add_handler(CallbackQueryHandler(button_callback))
+
 
 @app.post("/webhook")
 async def webhook(request: Request):
