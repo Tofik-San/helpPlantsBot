@@ -1,10 +1,7 @@
 import logging
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-from telegram import (
-    Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup, ParseMode
-)
-from telegram.error import TelegramError
+from telegram import Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup, ParseMode
 from telegram.ext import Dispatcher, CommandHandler, MessageHandler, Filters, CallbackQueryHandler
 from service import get_plant_data, format_plant_info_base, format_plant_info_extended, get_bot_info
 import os
@@ -28,17 +25,25 @@ def handle_message(update: Update, context):
     plant = get_plant_data(query)
 
     if plant:
-        info_text = format_plant_info_base(plant)
         image_url = f"https://tofik-san.github.io/helpPlantsBot/images/{plant['image']}"
         keyboard = [[InlineKeyboardButton("📄 Статья", callback_data=f"extended_{plant['id']}")]]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
+        # Отправляем фото с короткой подписью
         context.bot.send_photo(
             chat_id=update.effective_chat.id,
             photo=image_url,
-            caption=info_text,
+            caption=f"<b>{plant.get('name')}</b>\n{plant.get('short_description')}",
             parse_mode=ParseMode.HTML,
             reply_markup=reply_markup
+        )
+
+        # Отправляем подробную информацию отдельным сообщением
+        info_text = format_plant_info_base(plant)
+        context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=info_text,
+            parse_mode=ParseMode.HTML
         )
     else:
         context.bot.send_message(chat_id=update.effective_chat.id, text="🌱 Растение не найдено. Попробуйте другое название.")
