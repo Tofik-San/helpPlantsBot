@@ -24,8 +24,9 @@ def start(update):
         [InlineKeyboardButton("📢 Канал", url="https://t.me/+g4KcJjJAR7pkZWJi")]
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    update.message.reply_text(
-        "🌿 Привет! Я бот по растениям.\nВыберите категорию или перейдите в канал:",
+    bot.send_message(
+        chat_id=update.message.chat.id,
+        text="🌿 Привет! Я бот по растениям.\nВыберите категорию или перейдите в канал:",
         reply_markup=reply_markup
     )
 
@@ -33,8 +34,9 @@ def start(update):
 def handle_message(update):
     text = update.message.text.strip()
     if text == "📢 Канал":
-        update.message.reply_text(
-            "🔗 Наш канал: https://t.me/+g4KcJjJAR7pkZWJi"
+        bot.send_message(
+            chat_id=update.message.chat.id,
+            text="🔗 Наш канал: https://t.me/+g4KcJjJAR7pkZWJi"
         )
         return
 
@@ -53,7 +55,10 @@ def handle_message(update):
             parse_mode="HTML"
         )
     else:
-        update.message.reply_text("🌿 Растение не найдено. Попробуйте другое название.")
+        bot.send_message(
+            chat_id=update.message.chat.id,
+            text="🌿 Растение не найдено. Попробуйте другое название."
+        )
 
 # Обработка кнопок
 def button_callback(update):
@@ -70,9 +75,16 @@ def button_callback(update):
                 for plant in plants
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
-            query.message.reply_text("Выберите растение:", reply_markup=reply_markup)
+            bot.send_message(
+                chat_id=query.message.chat.id,
+                text="Выберите растение:",
+                reply_markup=reply_markup
+            )
         else:
-            query.message.reply_text("В этой категории пока нет растений.")
+            bot.send_message(
+                chat_id=query.message.chat.id,
+                text="В этой категории пока нет растений."
+            )
 
     elif data.startswith("plant_"):
         plant_id = int(data.split("_")[1])
@@ -91,7 +103,10 @@ def button_callback(update):
                 parse_mode="HTML"
             )
         else:
-            query.message.reply_text("Ошибка при получении информации о растении.")
+            bot.send_message(
+                chat_id=query.message.chat.id,
+                text="Ошибка при получении информации о растении."
+            )
 
     elif data.startswith("details_"):
         plant_id = int(data.split("_")[1])
@@ -109,9 +124,17 @@ def button_callback(update):
             )
             keyboard = [[InlineKeyboardButton("📖 Статья", callback_data=f"insights_{plant['id']}")]]
             reply_markup = InlineKeyboardMarkup(keyboard)
-            query.message.reply_text(detailed_info, parse_mode="HTML", reply_markup=reply_markup)
+            bot.send_message(
+                chat_id=query.message.chat.id,
+                text=detailed_info,
+                parse_mode="HTML",
+                reply_markup=reply_markup
+            )
         else:
-            query.message.reply_text("Не удалось получить подробную информацию.")
+            bot.send_message(
+                chat_id=query.message.chat.id,
+                text="Не удалось получить подробную информацию."
+            )
 
     elif data.startswith("insights_"):
         plant_id = int(data.split("_")[1])
@@ -119,12 +142,22 @@ def button_callback(update):
         if plant_list:
             plant = plant_list[0]
             insights_text = plant['insights'].replace("\\n", "<br>").replace("\n", "<br>")
-            query.message.reply_text(insights_text, parse_mode="HTML")
+            bot.send_message(
+                chat_id=query.message.chat.id,
+                text=insights_text,
+                parse_mode="HTML"
+            )
         else:
-            query.message.reply_text("Не удалось получить статью для этого растения.")
+            bot.send_message(
+                chat_id=query.message.chat.id,
+                text="Не удалось получить статью для этого растения."
+            )
 
     else:
-        query.message.reply_text("Неизвестная команда.")
+        bot.send_message(
+            chat_id=query.message.chat.id,
+            text="Неизвестная команда."
+        )
 
 # Webhook
 @app.post("/webhook")
