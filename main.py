@@ -15,10 +15,10 @@ TOKEN = os.getenv("BOT_TOKEN")
 bot = Bot(token=TOKEN)
 app = FastAPI()
 
-# Постоянная клавиатура (возвращаем кнопку "📢 Канал" обратно)
+# Постоянная клавиатура (добавляем кнопку "❓ Help", остальное не трогаем)
 def get_persistent_keyboard():
     keyboard = [
-        [KeyboardButton("🔄 Рестарт"), KeyboardButton("ℹ️ О проекте"), KeyboardButton("📢 Канал")]
+        [KeyboardButton("🔄 Рестарт"), KeyboardButton("ℹ️ О проекте"), KeyboardButton("📢 Канал"), KeyboardButton("❓ Help")]
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
@@ -93,6 +93,12 @@ Python, FastAPI, PostgreSQL, Telegram Bot API, SQLAlchemy, Docker, Railway, ин
         bot.send_message(
             chat_id=update.message.chat.id,
             text="https://t.me/BOTanik_Channel",
+            reply_markup=get_persistent_keyboard()
+        )
+    elif text == "❓ Help":
+        bot.send_message(
+            chat_id=update.message.chat.id,
+            text="❓ Help: Здесь будет краткое описание помощи. Можешь дописать позже.",
             reply_markup=get_persistent_keyboard()
         )
     else:
