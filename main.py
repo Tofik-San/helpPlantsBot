@@ -18,9 +18,8 @@ app = FastAPI()
 # Постоянная клавиатура
 def get_persistent_keyboard():
     keyboard = [
-        [KeyboardButton("ℹ️ О проекте"), KeyboardButton("📢 Канал")],
-        [KeyboardButton("❓ Help")],
-        [KeyboardButton("📂 Категории")]
+        [KeyboardButton("📂 Категории"), KeyboardButton("❓ Help")],
+        [KeyboardButton("📢 Канал"), KeyboardButton("ℹ️ О проекте")]
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
