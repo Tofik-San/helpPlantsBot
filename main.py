@@ -40,11 +40,19 @@ def handle_static_buttons(update):
     if text == "/start":
         start(update)
     elif text == "ℹ️ О проекте":
-        bot.send_message(chat_id=update.message.chat.id, text=get_bot_info(), reply_markup=get_persistent_keyboard())
+        bot.send_message(
+            chat_id=update.message.chat.id,
+            text="ℹ️ О проекте:\n\n[ТУТ БУДЕТ ОПИСАНИЕ ПРОЕКТА, КОТОРОЕ ВЫ ДОБАВИТЕ ПОЗЖЕ]",
+            reply_markup=get_persistent_keyboard()
+        )
     elif text == "📢 Канал":
         bot.send_message(chat_id=update.message.chat.id, text="https://t.me/BOTanikPlants", reply_markup=get_persistent_keyboard())
     elif text == "❓ Help":
-        bot.send_message(chat_id=update.message.chat.id, text="Бот BOTanik поможет выбрать и узнать, как ухаживать за растениями.", reply_markup=get_persistent_keyboard())
+        bot.send_message(
+            chat_id=update.message.chat.id,
+            text="❓ Help:\n\n[ТУТ БУДЕТ ВАШ ТЕКСТ ПОМОЩИ, КОТОРЫЙ ВЫ ДОБАВИТЕ ПОЗЖЕ]",
+            reply_markup=get_persistent_keyboard()
+        )
     elif text == "📂 Категории":
         bot.send_message(chat_id=update.message.chat.id, text="Выбери категорию:", reply_markup=get_category_inline_keyboard())
     else:
