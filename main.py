@@ -89,7 +89,7 @@ def handle_static_buttons(update):
     elif text == "📢 Канал":
         bot.send_message(
             chat_id=update.message.chat.id,
-            text="https://t.me/BOTanik_Channel",
+            text="https://t.me/BOTanikPlants",
             reply_markup=get_persistent_keyboard()
         )
     elif text == "❓ Help":
