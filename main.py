@@ -15,10 +15,11 @@ TOKEN = os.getenv("BOT_TOKEN")
 bot = Bot(token=TOKEN)
 app = FastAPI()
 
-# Постоянная клавиатура
+# Постоянная клавиатура (исправлено под твои пожелания)
 def get_persistent_keyboard():
     keyboard = [
-        [KeyboardButton("🔄 Рестарт"), KeyboardButton("ℹ️ О проекте"), KeyboardButton("📢 Канал"), KeyboardButton("❓ Help")]
+        [KeyboardButton("🔄 Рестарт"), KeyboardButton("ℹ️ О проекте"), KeyboardButton("📢 Канал")],
+        [KeyboardButton("❓ Help")]
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
@@ -32,11 +33,16 @@ def get_category_inline_keyboard():
     ]
     return InlineKeyboardMarkup(keyboard)
 
-# Старт (исправлено)
+# Старт
 def start(update):
     bot.send_message(
         chat_id=update.message.chat.id,
         text="🌿 Выберите категорию ниже или используйте кнопки внизу для навигации:",
+        reply_markup=get_persistent_keyboard()
+    )
+    bot.send_message(
+        chat_id=update.message.chat.id,
+        text="Выберите категорию:",
         reply_markup=get_category_inline_keyboard()
     )
 
