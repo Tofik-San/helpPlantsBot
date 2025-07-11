@@ -18,10 +18,16 @@ app = FastAPI()
 # Постоянная клавиатура
 def get_persistent_keyboard():
     keyboard = [
-        [KeyboardButton("🔄 Рестарт"), KeyboardButton("ℹ️ О проекте")],
-        [KeyboardButton("📢 Канал")]
+        [KeyboardButton("🔄 Рестарт"), KeyboardButton("ℹ️ О проекте")]
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+# Кнопка мгновенного перехода в канал
+def get_channel_inline_keyboard():
+    keyboard = [
+        [InlineKeyboardButton("📢 Перейти в канал", url="https://t.me/BOTanik_Channel")]
+    ]
+    return InlineKeyboardMarkup(keyboard)
 
 # Inline категории
 def get_category_inline_keyboard():
@@ -93,7 +99,8 @@ Python, FastAPI, PostgreSQL, Telegram Bot API, SQLAlchemy, Docker, Railway, ин
     elif text == "📢 Канал":
         bot.send_message(
             chat_id=update.message.chat.id,
-            text="https://t.me/BOTanik_Channel"
+            text="Нажми кнопку ниже для перехода в канал BOTanik 👇",
+            reply_markup=get_channel_inline_keyboard()
         )
     else:
         handle_message(update)
