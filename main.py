@@ -18,7 +18,7 @@ app = FastAPI()
 # Постоянная клавиатура
 def get_persistent_keyboard():
     keyboard = [
-        [KeyboardButton("🔄 Рестарт"), KeyboardButton("ℹ️ О проекте"), KeyboardButton("📢 Канал")],
+        [KeyboardButton("ℹ️ О проекте"), KeyboardButton("📢 Канал")],
         [KeyboardButton("❓ Help")],
         [KeyboardButton("📂 Категории")]
     ]
@@ -38,14 +38,14 @@ def get_category_inline_keyboard():
 def start(update):
     bot.send_message(
         chat_id=update.message.chat.id,
-        text="🌿 BOTanik готов к работе.\nВыбери действие с помощью кнопок внизу.",
+        text="🌿 BOTanik готов к работе.\n\nВыбери действие с помощью кнопок внизу или нажми «📂 Категории» для выбора растений.",
         reply_markup=get_persistent_keyboard()
     )
 
 # Обработка кнопок
 def handle_static_buttons(update):
     text = update.message.text.strip()
-    if text == "🔄 Рестарт":
+    if text == "/start":
         start(update)
     elif text == "ℹ️ О проекте":
         bot.send_message(
