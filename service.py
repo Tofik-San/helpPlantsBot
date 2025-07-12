@@ -37,7 +37,6 @@ def get_plant_data(name=None, category_filter=None, id_filter=None, page_size=5,
         for row in result:
             plant = {
                 "id": row["id"],
-                "image": row["image"],
                 "name": row["name"],
                 "latin_name": row["latin_name"],
                 "short_description": row["short_description"],

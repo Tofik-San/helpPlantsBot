@@ -38,19 +38,15 @@ def get_category_inline_keyboard():
 category_data = {
     "succulents": {
         "description": "Суккуленты — это растения, которые способны накапливать воду в своих тканях...",
-        "image": "images/succulents.jpg"
     },
     "easy_plants": {
         "description": "Неприхотливые растения, которые легко выращивать в домашних условиях...",
-        "image": "images/easy_plants.jpg"
     },
     "flowering_plants": {
         "description": "Цветущие растения, которые украсят ваш дом...",
-        "image": "images/flowering_plants.jpg"
     },
     "vines": {
         "description": "Лианы, которые могут использоваться как декоративные растения...",
-        "image": "images/vines.jpg"
     }
 }
 
@@ -153,24 +149,16 @@ def button_callback(update):
         category_info = category_data.get(category)
 
         if category_info:
-            image_path = category_info["image"]
             description = category_info["description"]
 
-            try:
-                # Отправляем изображение и описание
-                if os.path.exists(image_path):
-                    bot.send_photo(
-                        chat_id=query.message.chat.id,
-                        photo=open(image_path, 'rb'),
-                        caption=f"Информация о категории {category}\n\n{description}",
-                        reply_markup=InlineKeyboardMarkup([ 
-                            [InlineKeyboardButton("📖 К сортам", callback_data=f"plants_{category}")]
-                        ])
-                    )
-                else:
-                    bot.send_message(chat_id=query.message.chat.id, text=f"Ошибка: файл для категории {category} не найден!")
-            except Exception as e:
-                bot.send_message(chat_id=query.message.chat.id, text=f"Ошибка при загрузке изображения категории {category}: {e}")
+            # Отправляем описание категории без изображения
+            bot.send_message(
+                chat_id=query.message.chat.id,
+                text=f"Информация о категории {category}\n\n{description}",
+                reply_markup=InlineKeyboardMarkup([ 
+                    [InlineKeyboardButton("📖 К сортам", callback_data=f"plants_{category}")]
+                ])
+            )
         else:
             bot.send_message(chat_id=query.message.chat.id, text="Ошибка: такая категория не найдена.", reply_markup=get_persistent_keyboard())
 
@@ -186,7 +174,7 @@ def button_callback(update):
             user_id = query.from_user.id
             user_pages[user_id] = {
                 'category': plant_type,
-                'plants': paginate_plants(plant_list), # Пагинируем растения
+                'plants': paginate_plants(plant_list),  # Пагинируем растения
                 'current_page': 0
             }
 
@@ -209,9 +197,7 @@ def button_callback(update):
                 f"🌻 <b>Удобрения:</b> {plant['fertilizer']}\n"
                 f"✂️ <b>Уход:</b> {plant['care_tip']}"
             )
-            keyboard = [[InlineKeyboardButton("📖 Статья", callback_data=f"insights_{plant['id']}")]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            bot.send_message(chat_id=query.message.chat.id, text=detailed_info, parse_mode="HTML", reply_markup=reply_markup)
+            bot.send_message(chat_id=query.message.chat.id, text=detailed_info, parse_mode="HTML")
         else:
             bot.send_message(chat_id=query.message.chat.id, text="Не удалось получить подробную информацию.", reply_markup=get_persistent_keyboard())
 
