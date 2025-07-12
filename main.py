@@ -142,10 +142,10 @@ def button_callback(update):
         
         # Краткое описание для категории
         category_description = {
-            "succulents": "Суккуленты — это растения, которые способны накапливать воду в своих тканях, что позволяет им выживать в условиях засухи. Они разнообразны по виду и размеру, но все они требуют минимального ухода и хорошо себя чувствуют при недостатке воды.",
-            "easy_plants": "Неприхотливые растения, которые легко выращивать в домашних условиях.",
-            "flowering_plants": "Цветущие растения, которые украсят ваш дом.",
-            "vines": "Лианы, которые могут использоваться как декоративные растения для интерьера."
+            "succulents": "Суккуленты — это растения, которые способны накапливать воду в своих тканях...",
+            "easy_plants": "Неприхотливые растения, которые легко выращивать в домашних условиях...",
+            "flowering_plants": "Цветущие растения, которые украсят ваш дом...",
+            "vines": "Лианы, которые могут использоваться как декоративные растения..."
         }
         
         try:
@@ -161,10 +161,8 @@ def button_callback(update):
                 )
             else:
                 bot.send_message(chat_id=query.message.chat.id, text=f"Ошибка: файл для категории {category} не найден!")
-                logger.error(f"Файл {image_path} не найден!")
         except Exception as e:
             bot.send_message(chat_id=query.message.chat.id, text=f"Ошибка при загрузке изображения категории {category}: {e}")
-            logger.error(f"Ошибка при отправке фото: {e}")
 
     elif data.startswith("plants_"):
         plant_type = data.split("_", 1)[1]
@@ -173,7 +171,6 @@ def button_callback(update):
         plant_list = get_plant_data(category_filter=plant_type)
 
         if plant_list:
-            # Если сорта есть, показываем их
             plant = plant_list[0]  # Пока показываем первый сорт
             caption = f"<b>{plant['name']}</b>\n{plant['short_description']}"
             keyboard = [
