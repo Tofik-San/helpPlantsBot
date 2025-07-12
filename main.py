@@ -103,9 +103,10 @@ def button_callback(update):
         if info:
             try:
                 with open(info["image"], "rb") as photo:
-                    keyboard = InlineKeyboardMarkup().add(
-                        InlineKeyboardButton("📜 К сортам", callback_data=f"list_varieties_{category}_0")
-                    )
+                    keyboard = InlineKeyboardMarkup([
+    [InlineKeyboardButton("📜 К сортам", callback_data=f"list_varieties_{category}_0")]
+   ])
+
                     bot.send_photo(
                         chat_id=query.message.chat.id,
                         photo=photo,
