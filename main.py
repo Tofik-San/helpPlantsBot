@@ -12,6 +12,7 @@ TOKEN = os.getenv("BOT_TOKEN")
 bot = Bot(token=TOKEN)
 app = FastAPI()
 
+# Основная клавиатура
 def get_persistent_keyboard():
     keyboard = [
         [KeyboardButton("📂 Категории"), KeyboardButton("❓ Help")],
@@ -19,6 +20,7 @@ def get_persistent_keyboard():
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
+# Клавиатура для выбора категории
 def get_category_inline_keyboard():
     keyboard = [
         [InlineKeyboardButton("🪴 Суккуленты", callback_data="category_succulents")],
@@ -28,6 +30,7 @@ def get_category_inline_keyboard():
     ]
     return InlineKeyboardMarkup(keyboard)
 
+# Стартовое сообщение
 def start(update):
     bot.send_message(
         chat_id=update.message.chat.id,
@@ -35,6 +38,7 @@ def start(update):
         reply_markup=get_persistent_keyboard()
     )
 
+# Обработка статических кнопок (помощь, канал, категории)
 def handle_static_buttons(update):
     text = update.message.text.strip()
     if text == "/start":
@@ -75,7 +79,7 @@ def handle_static_buttons(update):
 – Может стать точкой входа для развития питомника в цифровом формате.
 
 📢 Канал проекта: https://t.me/BOTanikPlants
-Связь по сотрудничству: @veryhappyEpta""",
+Связь по сотрудничеству: @veryhappyEpta""",
             reply_markup=get_persistent_keyboard()
         )
     elif text == "📢 Канал":
@@ -113,6 +117,7 @@ https://t.me/BOTanikPlants
     else:
         handle_message(update)
 
+# Обработка сообщений с названием растения
 def handle_message(update):
     text = update.message.text.strip()
     plant_list = get_plant_data(name=text)
@@ -125,6 +130,7 @@ def handle_message(update):
     else:
         bot.send_message(chat_id=update.message.chat.id, text="Растение не найдено. Попробуй другое название или выбери категорию.", reply_markup=get_persistent_keyboard())
 
+# Обработка нажатия кнопок
 def button_callback(update):
     query = update.callback_query
     data = query.data
@@ -162,10 +168,13 @@ def button_callback(update):
 
     elif data.startswith("plants_"):
         plant_type = data.split("_", 1)[1]
+        
+        # Получаем сорта для выбранной категории (фильтруем по category_type)
         plant_list = get_plant_data(category_filter=plant_type)
 
         if plant_list:
-            plant = plant_list[0]  # Показываем первый сорт для упрощения
+            # Если сорта есть, показываем их
+            plant = plant_list[0]  # Пока показываем первый сорт
             caption = f"<b>{plant['name']}</b>\n{plant['short_description']}"
             keyboard = [
                 [InlineKeyboardButton("📖 Подробнее", callback_data=f"details_{plant['id']}")],
