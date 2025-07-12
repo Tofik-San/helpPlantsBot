@@ -145,9 +145,9 @@ def button_callback(update):
                 plant = plant_list[index]
                 msg = format_plant_info_base(plant) + "\n\n" + format_plant_info_extended(plant)
                 nav = get_navigation_keyboard(category, index)
-                bot.edit_message_text(
+                # ❗ Важно: не редактируем фото, отправляем новое сообщение
+                bot.send_message(
                     chat_id=query.message.chat.id,
-                    message_id=query.message.message_id,
                     text=msg,
                     parse_mode="HTML",
                     reply_markup=nav
