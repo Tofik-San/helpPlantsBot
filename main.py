@@ -75,7 +75,7 @@ def handle_static_buttons(update):
 – Может стать точкой входа для развития питомника в цифровом формате.
 
 📢 Канал проекта: https://t.me/BOTanikPlants
-Связь по сотрудничеству: @veryhappyEpta""",
+Связь по сотрудничству: @veryhappyEpta""",
             reply_markup=get_persistent_keyboard()
         )
     elif text == "📢 Канал":
@@ -131,6 +131,8 @@ def button_callback(update):
 
     if data.startswith("category_"):
         category = data.split("_", 1)[1]
+        # Путь к изображению для категории
+        image_path = f"images/{category.lower()}.jpg"
         
         # Краткое описание для категории
         category_description = {
@@ -140,13 +142,23 @@ def button_callback(update):
             "vines": "Лианы, которые могут использоваться как декоративные растения для интерьера."
         }
         
-        bot.send_message(
-            chat_id=query.message.chat.id,
-            text=f"Информация о категории {category}\n\n{category_description[category]}",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("📖 К сортам", callback_data=f"plants_{category}")]
-            ])
-        )
+        try:
+            # Проверка наличия изображения
+            if os.path.exists(image_path):
+                bot.send_photo(
+                    chat_id=query.message.chat.id,
+                    photo=open(image_path, 'rb'),
+                    caption=f"Информация о категории {category}\n\n{category_description[category]}",
+                    reply_markup=InlineKeyboardMarkup([
+                        [InlineKeyboardButton("📖 К сортам", callback_data=f"plants_{category}")]
+                    ])
+                )
+            else:
+                bot.send_message(chat_id=query.message.chat.id, text=f"Ошибка: файл для категории {category} не найден!")
+                logger.error(f"Файл {image_path} не найден!")
+        except Exception as e:
+            bot.send_message(chat_id=query.message.chat.id, text=f"Ошибка при загрузке изображения категории {category}: {e}")
+            logger.error(f"Ошибка при отправке фото: {e}")
 
     elif data.startswith("plants_"):
         plant_type = data.split("_", 1)[1]
@@ -157,7 +169,8 @@ def button_callback(update):
             caption = f"<b>{plant['name']}</b>\n{plant['short_description']}"
             keyboard = [
                 [InlineKeyboardButton("📖 Подробнее", callback_data=f"details_{plant['id']}")],
-                [InlineKeyboardButton("🔙 Назад", callback_data=f"category_{plant_type}")]
+                [InlineKeyboardButton("🔙 Назад", callback_data=f"category_{plant_type}")],
+                [InlineKeyboardButton("➡️ Далее", callback_data=f"next_plant_{plant_type}")]
             ]
             reply_markup = InlineKeyboardMarkup(keyboard)
             bot.send_message(chat_id=query.message.chat.id, text=caption, reply_markup=reply_markup, parse_mode="HTML")
