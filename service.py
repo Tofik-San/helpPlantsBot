@@ -4,6 +4,7 @@ import os
 DATABASE_URL = os.environ.get("DATABASE_URL")
 engine = create_engine(DATABASE_URL)
 
+
 def get_plant_data(name=None, category_filter=None, id_filter=None):
     with engine.connect() as connection:
         if id_filter:
@@ -18,32 +19,39 @@ def get_plant_data(name=None, category_filter=None, id_filter=None):
         else:
             return None
 
-        plants = []
-        for row in result:
-            plant = {
-                "id": row["id"],
-                "image": row["image"],
-                "name": row["name"],
-                "latin_name": row["latin_name"],
-                "short_description": row["short_description"],
-                "category_type": row["category_type"],
-                "light": row["light"],
-                "watering": row["watering"],
-                "temperature": row["temperature"],
-                "soil": row["soil"],
-                "fertilizer": row["fertilizer"],
-                "care_tip": row["care_tip"],
-                "insights": row["insights"]
-            }
-            plants.append(plant)
+        return [format_plant(row) for row in result]
 
-        return plants if plants else None
+
+def list_varieties_by_category(category: str):
+    with engine.connect() as connection:
+        query = text("SELECT * FROM plants WHERE category_type ILIKE :category")
+        result = connection.execute(query, {"category": f"%{category}%"}).mappings()
+        return [format_plant(row) for row in result]
+
+
+def format_plant(row):
+    return {
+        "id": row["id"],
+        "name": row["name"],
+        "latin_name": row["latin_name"],
+        "short_description": row["short_description"],
+        "category_type": row["category_type"],
+        "light": row["light"],
+        "watering": row["watering"],
+        "temperature": row["temperature"],
+        "soil": row["soil"],
+        "fertilizer": row["fertilizer"],
+        "care_tip": row["care_tip"],
+        "insights": row["insights"],
+    }
+
 
 def format_plant_info_base(plant):
     return (
         f"<b>{plant.get('name')}</b>\n"
         f"{plant.get('short_description')}"
     )
+
 
 def format_plant_info_extended(plant):
     return (
@@ -55,6 +63,7 @@ def format_plant_info_extended(plant):
         f"🌻 <b>Удобрения:</b> {plant.get('fertilizer')}\n"
         f"✂️ <b>Уход:</b> {plant.get('care_tip')}"
     )
+
 
 def get_bot_info():
     return (
