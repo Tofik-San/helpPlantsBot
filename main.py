@@ -3,7 +3,7 @@ import os
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from telegram import Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
-from service import get_plant_data, get_bot_info
+from service import get_plant_data, paginate_plants
 from collections import defaultdict
 
 logging.basicConfig(level=logging.INFO)

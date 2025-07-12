@@ -11,7 +11,6 @@ def get_plant_data(name=None, category_filter=None, id_filter=None, page_size=5,
             query = text("SELECT * FROM plants WHERE id = :id")
             result = connection.execute(query, {"id": id_filter}).mappings()
         elif category_filter:
-            # Убираем лишние пробелы и проверяем на пустое значение
             category_filter = category_filter.strip() if category_filter else None
             if category_filter:
                 query = text("""
