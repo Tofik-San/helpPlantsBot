@@ -132,21 +132,23 @@ def handle_message(update):
 
 def button_callback(update):
     query = update.callback_query
-    try:
-        query.answer()
-    except Exception as e:
-        logger.warning(f"Failed to answer callback query: {e}")
     data = query.data
 
     if data.startswith("category_"):
         category = data.split("_", 1)[1]
-        plants = get_plant_data(category_filter=category)
-        if plants:
-            keyboard = [[InlineKeyboardButton(plant['name'], callback_data=f"plant_{plant['id']}")] for plant in plants]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            bot.send_message(chat_id=query.message.chat.id, text="Выбери растение:", reply_markup=reply_markup)
-        else:
-            bot.send_message(chat_id=query.message.chat.id, text="В этой категории пока нет растений.", reply_markup=get_persistent_keyboard())
+        # Путь к изображению для категории
+        image_path = f"images/{category.lower()}.jpg"
+        
+        try:
+            bot.send_photo(
+                chat_id=query.message.chat.id,
+                photo=open(image_path, 'rb'),
+                caption=f"Информация о категории {category}",
+                reply_markup=get_category_inline_keyboard()
+            )
+        except Exception as e:
+            bot.send_message(chat_id=query.message.chat.id, text=f"Ошибка при загрузке изображения категории {category}: {e}")
+            logger.error(f"Ошибка при отправке фото: {e}")
 
     elif data.startswith("plant_"):
         plant_id = int(data.split("_")[1])
