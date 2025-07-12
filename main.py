@@ -1,9 +1,23 @@
-import logging
-import os
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-from telegram import Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
-from service import get_plant_data, get_bot_info, list_varieties_by_category, format_plant_info_base, format_plant_info_extended
+from telegram import (
+    Bot,
+    Update,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+    ReplyKeyboardMarkup,
+    KeyboardButton,
+)
+import logging
+import os
+
+from service import (
+    get_plant_data,
+    get_bot_info,
+    list_varieties_by_category,
+    format_plant_info_base,
+    format_plant_info_extended,
+)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -35,7 +49,6 @@ CATEGORY_INFO = {
     }
 }
 
-user_category_state = {}
 
 def get_persistent_keyboard():
     keyboard = [
@@ -43,6 +56,7 @@ def get_persistent_keyboard():
         [KeyboardButton("📢 Канал"), KeyboardButton("ℹ️ О проекте")]
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
 
 def get_category_inline_keyboard():
     keyboard = [
@@ -53,6 +67,7 @@ def get_category_inline_keyboard():
     ]
     return InlineKeyboardMarkup(keyboard)
 
+
 def get_navigation_keyboard(category, index):
     return InlineKeyboardMarkup([
         [
@@ -61,12 +76,14 @@ def get_navigation_keyboard(category, index):
         ]
     ])
 
+
 def start(update):
     bot.send_message(
         chat_id=update.message.chat.id,
         text="🌿 BOTanik готов к работе. Выбери действие кнопками внизу или нажми '📂 Категории'.",
         reply_markup=get_persistent_keyboard()
     )
+
 
 def handle_static_buttons(update):
     text = update.message.text.strip()
@@ -89,6 +106,7 @@ def handle_static_buttons(update):
     elif text == "📂 Категории":
         bot.send_message(chat_id=update.message.chat.id, text="Выбери категорию:", reply_markup=get_category_inline_keyboard())
 
+
 def button_callback(update):
     query = update.callback_query
     try:
@@ -104,9 +122,8 @@ def button_callback(update):
             try:
                 with open(info["image"], "rb") as photo:
                     keyboard = InlineKeyboardMarkup([
-    [InlineKeyboardButton("📜 К сортам", callback_data=f"list_varieties_{category}_0")]
-   ])
-
+                        [InlineKeyboardButton("📜 К сортам", callback_data=f"list_varieties_{category}_0")]
+                    ])
                     bot.send_photo(
                         chat_id=query.message.chat.id,
                         photo=photo,
@@ -117,10 +134,12 @@ def button_callback(update):
             except Exception as e:
                 logger.error(f"Ошибка при открытии фото категории {category}: {e}")
                 bot.send_message(chat_id=query.message.chat.id, text="Ошибка при загрузке изображения категории.")
+
     elif data.startswith("list_varieties_"):
-        parts = data.split("_")
-        if len(parts) == 3:
-            category, index = parts[1], int(parts[2])
+        parts = data.split("_", 3)
+        if len(parts) == 4:
+            category = parts[2]
+            index = int(parts[3])
             plant_list = list_varieties_by_category(category)
             if 0 <= index < len(plant_list):
                 plant = plant_list[index]
@@ -136,6 +155,7 @@ def button_callback(update):
             else:
                 bot.answer_callback_query(query.id, text="Дальше сортов нет.")
 
+
 @app.post("/webhook")
 async def webhook(request: Request):
     data = await request.json()
@@ -145,6 +165,7 @@ async def webhook(request: Request):
     elif update.callback_query:
         button_callback(update)
     return JSONResponse(content={"status": "ok"})
+
 
 if __name__ == "__main__":
     import uvicorn
