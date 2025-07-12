@@ -140,12 +140,17 @@ def button_callback(update):
         image_path = f"images/{category.lower()}.jpg"
         
         try:
-            bot.send_photo(
-                chat_id=query.message.chat.id,
-                photo=open(image_path, 'rb'),
-                caption=f"Информация о категории {category}",
-                reply_markup=get_category_inline_keyboard()
-            )
+            # Проверка наличия изображения
+            if os.path.exists(image_path):
+                bot.send_photo(
+                    chat_id=query.message.chat.id,
+                    photo=open(image_path, 'rb'),
+                    caption=f"Информация о категории {category}",
+                    reply_markup=get_category_inline_keyboard()
+                )
+            else:
+                bot.send_message(chat_id=query.message.chat.id, text=f"Ошибка: файл для категории {category} не найден!")
+                logger.error(f"Файл {image_path} не найден!")
         except Exception as e:
             bot.send_message(chat_id=query.message.chat.id, text=f"Ошибка при загрузке изображения категории {category}: {e}")
             logger.error(f"Ошибка при отправке фото: {e}")
