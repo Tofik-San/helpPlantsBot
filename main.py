@@ -4,6 +4,7 @@ from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from telegram import Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
 from service import get_plant_data, get_bot_info
+from collections import defaultdict
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -11,6 +12,9 @@ logger = logging.getLogger(__name__)
 TOKEN = os.getenv("BOT_TOKEN")
 bot = Bot(token=TOKEN)
 app = FastAPI()
+
+# Храним текущую страницу для каждого пользователя в словаре
+user_pages = defaultdict(int)
 
 # Основная клавиатура
 def get_persistent_keyboard():
@@ -178,19 +182,16 @@ def button_callback(update):
         plant_list = get_plant_data(category_filter=plant_type)
 
         if plant_list:
-            # Создаем кнопки для сортов
-            keyboard = [
-                [InlineKeyboardButton(plant['name'], callback_data=f"details_{plant['id']}")]
-                for plant in plant_list
-            ]
-            keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data=f"category_{plant_type}")])
-            
-            # Отправляем список сортов
-            bot.send_message(
-                chat_id=query.message.chat.id,
-                text=f"Сорта в категории {plant_type}:",
-                reply_markup=InlineKeyboardMarkup(keyboard)
-            )
+            # Храним текущую страницу для каждого пользователя
+            user_id = query.from_user.id
+            user_pages[user_id] = {
+                'category': plant_type,
+                'plants': paginate_plants(plant_list), # Пагинируем растения
+                'current_page': 0
+            }
+
+            # Отправляем первую страницу сортов
+            send_plant_page(update, user_id)
         else:
             bot.send_message(chat_id=query.message.chat.id, text="В этой категории пока нет растений.", reply_markup=get_persistent_keyboard())
 
@@ -223,6 +224,35 @@ async def webhook(request: Request):
     elif update.callback_query:
         button_callback(update)
     return JSONResponse(content={"status": "ok"})
+
+def paginate_plants(plant_list, page_size=5):
+    """Разбиваем список сортов на страницы с заданным количеством элементов (по 5 сортов на страницу)."""
+    return [plant_list[i:i + page_size] for i in range(0, len(plant_list), page_size)]
+
+def send_plant_page(update, user_id):
+    """Отправляем страницу с сортами для данного пользователя"""
+    user_data = user_pages[user_id]
+    page = user_data['current_page']
+    category = user_data['category']
+    pages = user_data['plants']
+    
+    # Получаем текущие сорта для страницы
+    plant_page = pages[page]
+    plant_names = "\n".join([plant['name'] for plant in plant_page])
+    
+    # Кнопки "Далее" и "Назад"
+    keyboard = []
+    if page > 0:
+        keyboard.append([InlineKeyboardButton("⬅ Назад", callback_data="prev")])
+    if page < len(pages) - 1:
+        keyboard.append([InlineKeyboardButton("Далее ➡", callback_data="next")])
+    
+    # Отправляем сообщение с сортами
+    bot.send_message(
+        chat_id=update.message.chat.id,
+        text=f"Сорта в категории {category}:\n\n{plant_names}",
+        reply_markup=InlineKeyboardMarkup(keyboard)
+    )
 
 if __name__ == "__main__":
     import uvicorn
