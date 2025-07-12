@@ -137,7 +137,7 @@ https://t.me/BOTanikPlants
     else:
         handle_message(update)
 
-# Обработка нажатия кнопок категории
+# Обработка нажатия кнопки категории
 def button_callback(update):
     query = update.callback_query
     data = query.data
@@ -174,7 +174,7 @@ def button_callback(update):
     elif data.startswith("plants_"):
         plant_type = data.split("_", 1)[1]
         
-        # Получаем сорта для выбранной категории (фильтруем по category_type)
+        # Получаем сорта для выбранной категории (фильтруем по category_name)
         plant_list = get_plant_data(category_filter=plant_type)
 
         if plant_list:
@@ -200,7 +200,7 @@ def button_callback(update):
         if plant_list:
             plant = plant_list[0]
             detailed_info = (
-                f"🌿 <b>Тип:</b> {plant['category_type']}\n"
+                f"🌿 <b>Тип:</b> {plant['category_name']}\n"
                 f"☀️ <b>Свет:</b> {plant['light']}\n"
                 f"💧 <b>Полив:</b> {plant['watering']}\n"
                 f"🌡️ <b>Температура:</b> {plant['temperature']}\n"
