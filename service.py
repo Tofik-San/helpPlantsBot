@@ -65,6 +65,10 @@ def format_plant_info_extended(plant):
     )
 
 
+def format_plant_insights(plant):
+    return plant.get("insights", "").strip()
+
+
 def get_bot_info():
     return (
         "🌿 Этот бот поможет тебе узнать всё о растениях.\n\n"

@@ -17,6 +17,7 @@ from service import (
     list_varieties_by_category,
     format_plant_info_base,
     format_plant_info_extended,
+    format_plant_insights
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -68,10 +69,11 @@ def get_category_inline_keyboard():
     return InlineKeyboardMarkup(keyboard)
 
 
-def get_navigation_keyboard(category, index):
+def generate_variety_keyboard(category, index):
     return InlineKeyboardMarkup([
         [
             InlineKeyboardButton("◀️", callback_data=f"list_varieties_{category}_{index - 1}"),
+            InlineKeyboardButton("📖 Статья", callback_data=f"article_{category}_{index}"),
             InlineKeyboardButton("▶️", callback_data=f"list_varieties_{category}_{index + 1}")
         ]
     ])
@@ -144,8 +146,7 @@ def button_callback(update):
             if 0 <= index < len(plant_list):
                 plant = plant_list[index]
                 msg = format_plant_info_base(plant) + "\n\n" + format_plant_info_extended(plant)
-                nav = get_navigation_keyboard(category, index)
-                # ❗ Важно: не редактируем фото, отправляем новое сообщение
+                nav = generate_variety_keyboard(category, index)
                 bot.send_message(
                     chat_id=query.message.chat.id,
                     text=msg,
@@ -154,6 +155,21 @@ def button_callback(update):
                 )
             else:
                 bot.answer_callback_query(query.id, text="Дальше сортов нет.")
+
+    elif data.startswith("article_"):
+        parts = data.split("_", 2)
+        if len(parts) == 3:
+            category = parts[1]
+            index = int(parts[2])
+            plant_list = list_varieties_by_category(category)
+            if 0 <= index < len(plant_list):
+                plant = plant_list[index]
+                article = format_plant_insights(plant) or "Статья отсутствует."
+                bot.send_message(
+                    chat_id=query.message.chat.id,
+                    text=f"📖 <b>Статья:</b>\n{article}",
+                    parse_mode="HTML"
+                )
 
 
 @app.post("/webhook")
