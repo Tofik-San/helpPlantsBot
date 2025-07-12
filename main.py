@@ -159,7 +159,7 @@ def button_callback(update):
                         chat_id=query.message.chat.id,
                         photo=open(image_path, 'rb'),
                         caption=f"Информация о категории {category}\n\n{description}",
-                        reply_markup=InlineKeyboardMarkup([
+                        reply_markup=InlineKeyboardMarkup([ 
                             [InlineKeyboardButton("📖 К сортам", callback_data=f"plants_{category}")]
                         ])
                     )
@@ -169,6 +169,50 @@ def button_callback(update):
                 bot.send_message(chat_id=query.message.chat.id, text=f"Ошибка при загрузке изображения категории {category}: {e}")
         else:
             bot.send_message(chat_id=query.message.chat.id, text="Ошибка: такая категория не найдена.", reply_markup=get_persistent_keyboard())
+
+    # Обработка нажатия кнопки сортов
+    elif data.startswith("plants_"):
+        plant_type = data.split("_", 1)[1]
+        
+        # Получаем сорта для выбранной категории (фильтруем по category_type)
+        plant_list = get_plant_data(category_filter=plant_type)
+
+        if plant_list:
+            # Создаем кнопки для сортов
+            keyboard = [
+                [InlineKeyboardButton(plant['name'], callback_data=f"details_{plant['id']}")]
+                for plant in plant_list
+            ]
+            keyboard.append([InlineKeyboardButton("🔙 Назад", callback_data=f"category_{plant_type}")])
+            
+            # Отправляем список сортов
+            bot.send_message(
+                chat_id=query.message.chat.id,
+                text=f"Сорта в категории {plant_type}:",
+                reply_markup=InlineKeyboardMarkup(keyboard)
+            )
+        else:
+            bot.send_message(chat_id=query.message.chat.id, text="В этой категории пока нет растений.", reply_markup=get_persistent_keyboard())
+
+    elif data.startswith("details_"):
+        plant_id = int(data.split("_")[1])
+        plant_list = get_plant_data(id_filter=plant_id)
+        if plant_list:
+            plant = plant_list[0]
+            detailed_info = (
+                f"🌿 <b>Тип:</b> {plant['category_type']}\n"
+                f"☀️ <b>Свет:</b> {plant['light']}\n"
+                f"💧 <b>Полив:</b> {plant['watering']}\n"
+                f"🌡️ <b>Температура:</b> {plant['temperature']}\n"
+                f"🪴 <b>Почва:</b> {plant['soil']}\n"
+                f"🌻 <b>Удобрения:</b> {plant['fertilizer']}\n"
+                f"✂️ <b>Уход:</b> {plant['care_tip']}"
+            )
+            keyboard = [[InlineKeyboardButton("📖 Статья", callback_data=f"insights_{plant['id']}")]]
+            reply_markup = InlineKeyboardMarkup(keyboard)
+            bot.send_message(chat_id=query.message.chat.id, text=detailed_info, parse_mode="HTML", reply_markup=reply_markup)
+        else:
+            bot.send_message(chat_id=query.message.chat.id, text="Не удалось получить подробную информацию.", reply_markup=get_persistent_keyboard())
 
 @app.post("/webhook")
 async def webhook(request: Request):
