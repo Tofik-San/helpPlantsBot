@@ -165,10 +165,12 @@ def button_callback(update):
             if 0 <= index < len(plant_list):
                 plant = plant_list[index]
                 article = format_plant_insights(plant) or "Статья отсутствует."
+                nav = generate_variety_keyboard(category, index)
                 bot.send_message(
                     chat_id=query.message.chat.id,
                     text=f"📖 <b>Статья:</b>\n{article}",
-                    parse_mode="HTML"
+                    parse_mode="HTML",
+                    reply_markup=nav
                 )
 
 
