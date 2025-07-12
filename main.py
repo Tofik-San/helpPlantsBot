@@ -21,10 +21,10 @@ def get_persistent_keyboard():
 
 def get_category_inline_keyboard():
     keyboard = [
-        [InlineKeyboardButton("🪴 Суккуленты", callback_data="category_Суккуленты")],
-        [InlineKeyboardButton("🌿 Неприхотливые зелёные", callback_data="category_Неприхотливые зелёные")],
-        [InlineKeyboardButton("🌸 Цветущие", callback_data="category_Цветущие")],
-        [InlineKeyboardButton("🌱 Лианы", callback_data="category_Лианы")]
+        [InlineKeyboardButton("🪴 Суккуленты", callback_data="category_succulents")],
+        [InlineKeyboardButton("🌿 Неприхотливые зелёные", callback_data="category_easy_plants")],
+        [InlineKeyboardButton("🌸 Цветущие", callback_data="category_flowering_plants")],
+        [InlineKeyboardButton("🌱 Лианы", callback_data="category_vines")]
     ]
     return InlineKeyboardMarkup(keyboard)
 
