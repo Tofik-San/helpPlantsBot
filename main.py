@@ -30,6 +30,26 @@ def get_category_inline_keyboard():
     ]
     return InlineKeyboardMarkup(keyboard)
 
+# Данные о категориях (картинки и описания)
+category_data = {
+    "succulents": {
+        "description": "Суккуленты — это растения, которые способны накапливать воду в своих тканях...",
+        "image": "images/succulents.jpg"
+    },
+    "easy_plants": {
+        "description": "Неприхотливые растения, которые легко выращивать в домашних условиях...",
+        "image": "images/easy_plants.jpg"
+    },
+    "flowering_plants": {
+        "description": "Цветущие растения, которые украсят ваш дом...",
+        "image": "images/flowering_plants.jpg"
+    },
+    "vines": {
+        "description": "Лианы, которые могут использоваться как декоративные растения...",
+        "image": "images/vines.jpg"
+    }
+}
+
 # Стартовое сообщение
 def start(update):
     bot.send_message(
@@ -117,91 +137,38 @@ https://t.me/BOTanikPlants
     else:
         handle_message(update)
 
-# Обработка сообщений с названием растения
-def handle_message(update):
-    text = update.message.text.strip()
-    plant_list = get_plant_data(name=text)
-    if plant_list:
-        plant = plant_list[0]
-        caption = f"<b>{plant['name']}</b>\n{plant['short_description']}"
-        keyboard = [[InlineKeyboardButton("📖 Подробнее", callback_data=f"details_{plant['id']}")]]
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        bot.send_message(chat_id=update.effective_chat.id, text=caption, reply_markup=reply_markup, parse_mode="HTML")
-    else:
-        bot.send_message(chat_id=update.message.chat.id, text="Растение не найдено. Попробуй другое название или выбери категорию.", reply_markup=get_persistent_keyboard())
-
-# Обработка нажатия кнопок
+# Обработка нажатия кнопок категории
 def button_callback(update):
     query = update.callback_query
     data = query.data
 
     if data.startswith("category_"):
         category = data.split("_", 1)[1]
-        # Путь к изображению для категории
-        image_path = f"images/{category.lower()}.jpg"
         
-        # Краткое описание для категории
-        category_description = {
-            "succulents": "Суккуленты — это растения, которые способны накапливать воду в своих тканях...",
-            "easy_plants": "Неприхотливые растения, которые легко выращивать в домашних условиях...",
-            "flowering_plants": "Цветущие растения, которые украсят ваш дом...",
-            "vines": "Лианы, которые могут использоваться как декоративные растения..."
-        }
-        
-        try:
-            # Проверка наличия изображения
-            if os.path.exists(image_path):
-                bot.send_photo(
-                    chat_id=query.message.chat.id,
-                    photo=open(image_path, 'rb'),
-                    caption=f"Информация о категории {category}\n\n{category_description[category]}",
-                    reply_markup=InlineKeyboardMarkup([ 
-                        [InlineKeyboardButton("📖 К сортам", callback_data=f"plants_{category}")]
-                    ])
-                )
-            else:
-                bot.send_message(chat_id=query.message.chat.id, text=f"Ошибка: файл для категории {category} не найден!")
-        except Exception as e:
-            bot.send_message(chat_id=query.message.chat.id, text=f"Ошибка при загрузке изображения категории {category}: {e}")
+        # Извлекаем данные для выбранной категории
+        category_info = category_data.get(category)
 
-    elif data.startswith("plants_"):
-        plant_type = data.split("_", 1)[1]
-        
-        # Получаем сорта для выбранной категории (фильтруем по category_type)
-        plant_list = get_plant_data(category_filter=plant_type)
+        if category_info:
+            image_path = category_info["image"]
+            description = category_info["description"]
 
-        if plant_list:
-            plant = plant_list[0]  # Пока показываем первый сорт
-            caption = f"<b>{plant['name']}</b>\n{plant['short_description']}"
-            keyboard = [
-                [InlineKeyboardButton("📖 Подробнее", callback_data=f"details_{plant['id']}")],
-                [InlineKeyboardButton("🔙 Назад", callback_data=f"category_{plant_type}")],
-                [InlineKeyboardButton("➡️ Далее", callback_data=f"next_plant_{plant_type}")]
-            ]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            bot.send_message(chat_id=query.message.chat.id, text=caption, reply_markup=reply_markup, parse_mode="HTML")
+            try:
+                # Отправляем изображение и описание
+                if os.path.exists(image_path):
+                    bot.send_photo(
+                        chat_id=query.message.chat.id,
+                        photo=open(image_path, 'rb'),
+                        caption=f"Информация о категории {category}\n\n{description}",
+                        reply_markup=InlineKeyboardMarkup([
+                            [InlineKeyboardButton("📖 К сортам", callback_data=f"plants_{category}")]
+                        ])
+                    )
+                else:
+                    bot.send_message(chat_id=query.message.chat.id, text=f"Ошибка: файл для категории {category} не найден!")
+            except Exception as e:
+                bot.send_message(chat_id=query.message.chat.id, text=f"Ошибка при загрузке изображения категории {category}: {e}")
         else:
-            bot.send_message(chat_id=query.message.chat.id, text="В этой категории пока нет растений.", reply_markup=get_persistent_keyboard())
-
-    elif data.startswith("details_"):
-        plant_id = int(data.split("_")[1])
-        plant_list = get_plant_data(id_filter=plant_id)
-        if plant_list:
-            plant = plant_list[0]
-            detailed_info = (
-                f"🌿 <b>Тип:</b> {plant['category_type']}\n"
-                f"☀️ <b>Свет:</b> {plant['light']}\n"
-                f"💧 <b>Полив:</b> {plant['watering']}\n"
-                f"🌡️ <b>Температура:</b> {plant['temperature']}\n"
-                f"🪴 <b>Почва:</b> {plant['soil']}\n"
-                f"🌻 <b>Удобрения:</b> {plant['fertilizer']}\n"
-                f"✂️ <b>Уход:</b> {plant['care_tip']}"
-            )
-            keyboard = [[InlineKeyboardButton("📖 Статья", callback_data=f"insights_{plant['id']}")]]
-            reply_markup = InlineKeyboardMarkup(keyboard)
-            bot.send_message(chat_id=query.message.chat.id, text=detailed_info, parse_mode="HTML", reply_markup=reply_markup)
-        else:
-            bot.send_message(chat_id=query.message.chat.id, text="Не удалось получить подробную информацию.", reply_markup=get_persistent_keyboard())
+            bot.send_message(chat_id=query.message.chat.id, text="Ошибка: такая категория не найдена.", reply_markup=get_persistent_keyboard())
 
 @app.post("/webhook")
 async def webhook(request: Request):
