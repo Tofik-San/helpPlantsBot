@@ -155,7 +155,7 @@ def button_callback(update):
                     chat_id=query.message.chat.id,
                     photo=open(image_path, 'rb'),
                     caption=f"Информация о категории {category}\n\n{category_description[category]}",
-                    reply_markup=InlineKeyboardMarkup([
+                    reply_markup=InlineKeyboardMarkup([ 
                         [InlineKeyboardButton("📖 К сортам", callback_data=f"plants_{category}")]
                     ])
                 )

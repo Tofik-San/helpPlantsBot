@@ -10,8 +10,13 @@ def get_plant_data(name=None, category_filter=None, id_filter=None):
             query = text("SELECT * FROM plants WHERE id = :id")
             result = connection.execute(query, {"id": id_filter}).mappings()
         elif category_filter:
-            query = text("SELECT * FROM plants WHERE category_type ILIKE :category")
-            result = connection.execute(query, {"category": f"%{category_filter}%"}).mappings()
+            # Убираем лишние пробелы и проверяем на пустое значение
+            category_filter = category_filter.strip() if category_filter else None
+            if category_filter:
+                query = text("SELECT * FROM plants WHERE category_type ILIKE :category")
+                result = connection.execute(query, {"category": f"%{category_filter}%"}).mappings()
+            else:
+                return None  # Если фильтр пуст, не выполнять запрос
         elif name:
             query = text("SELECT * FROM plants WHERE name ILIKE :name")
             result = connection.execute(query, {"name": f"%{name}%"}).mappings()
