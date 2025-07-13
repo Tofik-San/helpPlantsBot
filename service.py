@@ -49,6 +49,7 @@ def format_plant(row):
 def format_plant_info_base(plant):
     return (
         f"<b>{plant.get('name')}</b>\n"
+        f"<i>{plant.get('latin_name')}</i>\n"
         f"{plant.get('short_description')}"
     )
 
