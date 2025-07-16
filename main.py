@@ -126,7 +126,7 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
 📢 Канал проекта: https://t.me/BOTanikPlants
 📬 Связь: @veryhappyEpta""")
     elif text == "📢 Канал":
-        await update.message.reply_text("Наш канал: https://t.me/yourchannel")
+        await update.message.reply_text("Наш канал: https://t.me/BOTanikPlants")
     elif text == "📘 Инфо":
         await update.message.reply_text("""📘 Как пользоваться ботом GreenCore
 
