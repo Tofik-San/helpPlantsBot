@@ -1,23 +1,27 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-from telegram import (
-    Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup,
-    ReplyKeyboardMarkup, KeyboardButton
-)
+from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup, KeyboardButton, ReplyKeyboardMarkup
+from telegram.ext import Application
 from service import (
-    get_plant_data, get_bot_info, format_plant_info_base,
-    format_plant_info_extended, identify_plant
+    get_plant_data,
+    get_bot_info,
+    format_plant_info_base,
+    format_plant_info_extended,
+    identify_plant
 )
 import os
 import aiohttp
 import logging
+import asyncio
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
 TOKEN = os.getenv("BOT_TOKEN")
-bot = Bot(token=TOKEN)
+WEBHOOK_URL = os.getenv("WEBHOOK_URL")
+
 app = FastAPI()
+application = Application.builder().token(TOKEN).build()  # PTB Application instance
 
 
 def get_keyboard():
@@ -28,110 +32,83 @@ def get_keyboard():
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
 
-async def start(update):
-    await bot.send_message(
-        chat_id=update.message.chat.id,
-        text="🌿 BOTanik готов к работе. Отправь фото растения или выбери действие кнопками ниже.",
-        reply_markup=get_keyboard()
-    )
-
-
-async def handle_buttons(update):
-    text = update.message.text.strip()
-    chat_id = update.message.chat.id
-
-    if text == "/start":
-        await start(update)
-
-    elif text == "ℹ️ О проекте":
-        await bot.send_message(
-            chat_id=chat_id,
-            text="🔎 Бот для распознавания растений и выдачи карточек ухода.\n\n📷 Просто отправь фото растения — бот определит его и покажет, как ухаживать.",
-            reply_markup=get_keyboard()
-        )
-
-    elif text == "📢 Канал":
-        await bot.send_message(
-            chat_id=chat_id,
-            text="https://t.me/BOTanikPlants",
-            reply_markup=get_keyboard()
-        )
-
-    elif text == "❓ Help":
-        await bot.send_message(
-            chat_id=chat_id,
-            text="📷 Отправь фото растения.\n🧠 Мы распознаем его и покажем, как ухаживать.\n\nЕсли бот не распознал — попробуй другое фото.",
-            reply_markup=get_keyboard()
-        )
+@app.on_event("startup")
+async def set_webhook():
+    await application.bot.set_webhook(WEBHOOK_URL)
+    logger.info(f"Webhook set to {WEBHOOK_URL}")
 
 
 @app.post("/webhook")
-async def webhook(request: Request):
+async def telegram_webhook(request: Request):
     data = await request.json()
-    update = Update.de_json(data, bot)
+    update = Update.de_json(data, application.bot)
 
-    if update.message and update.message.photo:
-        file_id = update.message.photo[-1].file_id
-        file = await bot.get_file(file_id)
+    if update.message:
+        chat_id = update.message.chat.id
+        text = update.message.text
 
-        if not os.path.exists("temp"):
-            os.makedirs("temp")
+        # --- Фото распознавание ---
+        if update.message.photo:
+            file_id = update.message.photo[-1].file_id
+            file = await application.bot.get_file(file_id)
 
-        photo_path = f"temp/{file_id}.jpg"
-        file_url = file.file_path
+            os.makedirs("temp", exist_ok=True)
+            photo_path = f"temp/{file_id}.jpg"
+            file_url = f"https://api.telegram.org/file/bot{TOKEN}/{file.file_path}"
 
-        async with aiohttp.ClientSession() as session:
-            async with session.get(file_url) as resp:
-                with open(photo_path, 'wb') as f:
-                    f.write(await resp.read())
+            async with aiohttp.ClientSession() as session:
+                async with session.get(file_url) as resp:
+                    with open(photo_path, 'wb') as f:
+                        f.write(await resp.read())
 
-        await bot.send_message(
-            chat_id=update.message.chat.id,
-            text="🔄 Обрабатываю фото..."
-        )
+            await application.bot.send_message(chat_id=chat_id, text="🔄 Обрабатываю фото...")
 
-        result = await identify_plant(photo_path)
-        if "error" in result:
-            await bot.send_message(
-                chat_id=update.message.chat.id,
-                text="🚫 Не удалось определить растение. Попробуйте другое фото."
+            result = await identify_plant(photo_path)
+            os.remove(photo_path)
+
+            if "error" in result or result["probability"] < 85:
+                await application.bot.send_message(chat_id=chat_id, text="🚫 Не удалось точно определить растение. Попробуйте другое фото.")
+                return JSONResponse(content={"status": "plant_id_error"})
+
+            latin_name = result["latin_name"]
+            probability = result["probability"]
+
+            await application.bot.send_message(
+                chat_id=chat_id,
+                text=f"🌿 Похоже, это <b>{latin_name}</b>\nУверенность: {probability}%",
+                parse_mode="HTML",
+                reply_markup=InlineKeyboardMarkup([
+                    [InlineKeyboardButton("📋 Уход", callback_data=f"care_{latin_name}")]
+                ])
             )
-            return JSONResponse(content={"status": "plant_id_error"})
+            return JSONResponse(content={"status": "plant_identified"})
 
-        latin_name = result["latin_name"]
-        probability = result["probability"]
+        # --- Кнопки ---
+        if text:
+            text = text.strip()
 
-        await bot.send_message(
-            chat_id=update.message.chat.id,
-            text=f"🌿 Похоже, это <b>{latin_name}</b>\n(уверенность: {probability}%)",
-            parse_mode="HTML",
-            reply_markup=InlineKeyboardMarkup([
-                [InlineKeyboardButton("📋 Уход", callback_data=f"care_{latin_name}")]
-            ])
-        )
-        return JSONResponse(content={"status": "plant_identified"})
-
-    if update.message and update.message.text:
-        await handle_buttons(update)
+            if text == "/start":
+                await application.bot.send_message(chat_id=chat_id, text="🌿 BOTanik готов к работе. Отправь фото растения или выбери действие кнопками ниже.", reply_markup=get_keyboard())
+            elif text == "ℹ️ О проекте":
+                await application.bot.send_message(chat_id=chat_id, text="🔎 Бот для распознавания растений и выдачи карточек ухода.\n\n📷 Просто отправь фото растения — бот определит его и покажет, как ухаживать.", reply_markup=get_keyboard())
+            elif text == "📢 Канал":
+                await application.bot.send_message(chat_id=chat_id, text="https://t.me/BOTanikPlants", reply_markup=get_keyboard())
+            elif text == "❓ Help":
+                await application.bot.send_message(chat_id=chat_id, text="📷 Отправь фото растения.\n🧠 Мы распознаем его и покажем, как ухаживать.\n\nЕсли бот не распознал — попробуй другое фото.", reply_markup=get_keyboard())
 
     elif update.callback_query:
         data = update.callback_query.data
+        chat_id = update.callback_query.message.chat.id
+
         if data.startswith("care_"):
             latin = data.split("_", 1)[1]
             plant_list = get_plant_data(name=latin)
             if plant_list:
                 plant = plant_list[0]
                 msg = format_plant_info_base(plant) + "\n\n" + format_plant_info_extended(plant)
-                await bot.send_message(
-                    chat_id=update.callback_query.message.chat.id,
-                    text=msg,
-                    parse_mode="HTML"
-                )
+                await application.bot.send_message(chat_id=chat_id, text=msg, parse_mode="HTML")
             else:
-                await bot.send_message(
-                    chat_id=update.callback_query.message.chat.id,
-                    text="❌ Нет информации о таком растении."
-                )
+                await application.bot.send_message(chat_id=chat_id, text="❌ Уход пока не добавлен.\n📩 Предложите добавить!")
 
     return JSONResponse(content={"status": "ok"})
 
