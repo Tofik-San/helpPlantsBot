@@ -1,4 +1,5 @@
 import logging
+import traceback
 from fastapi import FastAPI, Request
 from telegram import Update
 from telegram.ext import Application, CommandHandler
@@ -27,15 +28,21 @@ async def startup():
     logger.info("Webhook set successfully.")
 
 @app.post("/webhook")
-async def webhook(request: Request):
+async def telegram_webhook(request: Request):
     try:
         data = await request.json()
+
+        if not application.ready:
+            await application.initialize()
+
         update = Update.de_json(data, application.bot)
         await application.process_update(update)
         return {"ok": True}
+
     except Exception as e:
-        logger.exception("[webhook] Error processing update")
+        logger.error(f"[webhook] Error processing update\n\n{traceback.format_exc()}")
         return {"ok": False, "error": str(e)}
+
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8080)
