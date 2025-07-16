@@ -8,8 +8,8 @@ from telegram import (
     ReplyKeyboardMarkup,
     KeyboardButton,
 )
-import logging
 import os
+import logging
 
 from service import (
     get_plant_data,
@@ -70,13 +70,13 @@ async def webhook(request: Request):
 
     if update.message and update.message.photo:
         file_id = update.message.photo[-1].file_id
-        file = bot.get_file(file_id)  # исправлено: убран await
+        file = bot.get_file(file_id)
 
         if not os.path.exists("temp"):
             os.makedirs("temp")
 
         photo_path = f"temp/{file_id}.jpg"
-        file.download(photo_path)  # исправлено: убран await
+        file.download(photo_path)
 
         await bot.send_message(
             chat_id=update.message.chat.id,
