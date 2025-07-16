@@ -92,4 +92,4 @@ async def telegram_webhook(request: Request):
 
     except Exception as e:
         logger.exception("❌ Общая ошибка в webhook")
-        return {"ok": False"}
+        return {"ok": False}
