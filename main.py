@@ -1,44 +1,38 @@
-import os
 import logging
 from fastapi import FastAPI, Request
 from telegram import Update
-from telegram.ext import Application, CommandHandler, ContextTypes
+from telegram.ext import Application, CommandHandler
 
-from service import identify_plant
+import os
 
-# Логгер
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-
-# Переменные окружения
 TOKEN = os.getenv("BOT_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 
-# Инициализация
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
 app = FastAPI()
 application = Application.builder().token(TOKEN).build()
 
-# Хэндлер
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Привет! Я бот. Отправь фото растения — я подскажу, что это.")
+# Хендлер команды /start
+async def start(update: Update, context):
+    await update.message.reply_text("Привет! Я бот по уходу за растениями 🌿")
 
 application.add_handler(CommandHandler("start", start))
 
 @app.on_event("startup")
-async def on_startup():
-    try:
-        await application.bot.set_webhook(WEBHOOK_URL)
-        logger.info(f"Webhook set to {WEBHOOK_URL}")
-    except Exception as e:
-        logger.error(f"[startup] Failed to set webhook: {e}")
+async def startup():
+    logger.info("Setting webhook...")
+    await application.bot.set_webhook(WEBHOOK_URL)
+    logger.info("Webhook set successfully.")
 
 @app.post("/webhook")
-async def telegram_webhook(request: Request):
+async def webhook(request: Request):
     try:
         data = await request.json()
         update = Update.de_json(data, application.bot)
         await application.process_update(update)
         return {"ok": True}
     except Exception as e:
-        logger.error(f"[webhook] Error processing update: {e}")
+        logger.exception("[webhook] Error processing update")
         return {"ok": False, "error": str(e)}
