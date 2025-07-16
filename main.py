@@ -1,4 +1,3 @@
-
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from telegram import (
@@ -18,7 +17,8 @@ from service import (
     list_varieties_by_category,
     format_plant_info_base,
     format_plant_info_extended,
-    format_plant_insights
+    format_plant_insights,
+    identify_plant
 )
 
 logging.basicConfig(level=logging.INFO)
@@ -60,30 +60,10 @@ def get_persistent_keyboard():
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
 
-def get_category_inline_keyboard():
-    keyboard = [
-        [InlineKeyboardButton("🪴 Суккуленты", callback_data="category_Суккуленты")],
-        [InlineKeyboardButton("🌿 Неприхотливые зелёные", callback_data="category_Неприхотливые зелёные")],
-        [InlineKeyboardButton("🌸 Цветущие", callback_data="category_Цветущие")],
-        [InlineKeyboardButton("🌱 Лианы", callback_data="category_Лианы")]
-    ]
-    return InlineKeyboardMarkup(keyboard)
-
-
-def generate_variety_keyboard(category, index, include_article=True):
-    buttons = [
-        InlineKeyboardButton("◀️", callback_data=f"list_varieties_{category}_{index - 1}")
-    ]
-    if include_article:
-        buttons.append(InlineKeyboardButton("📖 Статья", callback_data=f"article_{category}_{index}"))
-    buttons.append(InlineKeyboardButton("▶️", callback_data=f"list_varieties_{category}_{index + 1}"))
-    return InlineKeyboardMarkup([buttons])
-
-
 def start(update):
     bot.send_message(
         chat_id=update.message.chat.id,
-        text="🌿 BOTanik готов к работе. Выбери действие кнопками внизу или нажми '📂 Категории'.",
+        text="🌿 BOTanik готов к работе. Отправь фото растения или выбери действие кнопками ниже.",
         reply_markup=get_persistent_keyboard()
     )
 
@@ -95,7 +75,7 @@ def handle_static_buttons(update):
     elif text == "ℹ️ О проекте":
         bot.send_message(
             chat_id=update.message.chat.id,
-            text="Описание проекта...",
+            text="🔎 Бот для распознавания растений и выдачи карточек ухода.\n\n📷 Просто отправь фото растения — бот определит его и покажет, как ухаживать.",
             reply_markup=get_persistent_keyboard()
         )
     elif text == "📢 Канал":
@@ -103,79 +83,9 @@ def handle_static_buttons(update):
     elif text == "❓ Help":
         bot.send_message(
             chat_id=update.message.chat.id,
-            text="Помощь и инструкции...",
+            text="📷 Отправь фото растения.\n🧠 Мы распознаем его и покажем, как ухаживать.\n\nЕсли бот не распознал — попробуй другое фото.",
             reply_markup=get_persistent_keyboard()
         )
-    elif text == "📂 Категории":
-        bot.send_message(chat_id=update.message.chat.id, text="Выбери категорию:", reply_markup=get_category_inline_keyboard())
-
-
-def button_callback(update):
-    query = update.callback_query
-    try:
-        query.answer()
-    except Exception as e:
-        logger.warning(f"Failed to answer callback query: {e}")
-    data = query.data
-
-    if data.startswith("category_"):
-        category = data.split("_", 1)[1]
-        info = CATEGORY_INFO.get(category)
-        if info:
-            try:
-                with open(info["image"], "rb") as photo:
-                    keyboard = InlineKeyboardMarkup([
-                        [InlineKeyboardButton("📜 К сортам", callback_data=f"list_varieties_{category}_0")]
-                    ])
-                    bot.send_photo(
-                        chat_id=query.message.chat.id,
-                        photo=photo,
-                        caption=f"<b>{info['title']}</b>
-
-{info['description']}",
-                        parse_mode="HTML",
-                        reply_markup=keyboard
-                    )
-            except Exception as e:
-                logger.error(f"Ошибка при открытии фото категории {category}: {e}")
-                bot.send_message(chat_id=query.message.chat.id, text="Ошибка при загрузке изображения категории.")
-
-    elif data.startswith("list_varieties_"):
-        parts = data.split("_", 3)
-        if len(parts) == 4:
-            category = parts[2]
-            index = int(parts[3])
-            plant_list = list_varieties_by_category(category)
-            if 0 <= index < len(plant_list):
-                plant = plant_list[index]
-                msg = format_plant_info_base(plant) + "\n\n" + format_plant_info_extended(plant)
-                nav = generate_variety_keyboard(category, index, include_article=True)
-                bot.send_message(
-                    chat_id=query.message.chat.id,
-                    text=msg,
-                    parse_mode="HTML",
-                    reply_markup=nav
-                )
-            else:
-                bot.answer_callback_query(query.id, text="Дальше сортов нет.")
-
-    elif data.startswith("article_"):
-        parts = data.split("_", 2)
-        if len(parts) == 3:
-            category = parts[1]
-            index = int(parts[2])
-            plant_list = list_varieties_by_category(category)
-            if 0 <= index < len(plant_list):
-                plant = plant_list[index]
-                article = format_plant_insights(plant) or "Статья отсутствует."
-                nav = generate_variety_keyboard(category, index, include_article=False)
-                bot.send_message(
-                    chat_id=query.message.chat.id,
-                    text=f"📖 <b>Статья:</b>\n{article}",
-                    parse_mode="HTML",
-                    reply_markup=nav
-                )
-
 
 
 @app.post("/webhook")
@@ -198,8 +108,6 @@ async def webhook(request: Request):
             text="🔄 Обрабатываю фото..."
         )
 
-        from service import identify_plant, get_plant_data, format_plant_info_base, format_plant_info_extended
-
         result = await identify_plant(photo_path)
         if "error" in result:
             await bot.send_message(
@@ -213,8 +121,7 @@ async def webhook(request: Request):
 
         await bot.send_message(
             chat_id=update.message.chat.id,
-            text=f"🌿 Похоже, это <b>{latin_name}</b>
-(уверенность: {probability}%)",
+            text=f"🌿 Похоже, это <b>{latin_name}</b>\n(уверенность: {probability}%)",
             parse_mode="HTML",
             reply_markup=InlineKeyboardMarkup([
                 [InlineKeyboardButton("📋 Уход", callback_data=f"care_{latin_name}")]
@@ -234,9 +141,7 @@ async def webhook(request: Request):
             plant_list = get_plant_data(name=latin)
             if plant_list:
                 plant = plant_list[0]
-                msg = format_plant_info_base(plant) + "
-
-" + format_plant_info_extended(plant)
+                msg = format_plant_info_base(plant) + "\n\n" + format_plant_info_extended(plant)
                 await bot.send_message(
                     chat_id=update.callback_query.message.chat.id,
                     text=msg,
@@ -247,11 +152,8 @@ async def webhook(request: Request):
                     chat_id=update.callback_query.message.chat.id,
                     text="❌ Нет информации о таком растении."
                 )
-        else:
-            button_callback(update)
 
     return JSONResponse(content={"status": "ok"})
-
 
 
 if __name__ == "__main__":
