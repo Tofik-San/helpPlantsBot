@@ -4,7 +4,6 @@ import logging
 from fastapi import FastAPI, Request
 from telegram import Update
 from telegram.ext import Application
-from telegram.ext._utils.webhookhandler import _set_webhook
 from service import identify_plant
 
 TOKEN = os.getenv("BOT_TOKEN")
