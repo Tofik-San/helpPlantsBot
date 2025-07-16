@@ -81,12 +81,19 @@ def get_bot_info():
 import aiohttp
 import base64
 
+
 PLANT_ID_API_KEY = os.getenv("PLANT_ID_API_KEY")
 
 
 async def identify_plant(image_path: str) -> dict:
-    with open(image_path, "rb") as image_file:
-        image_data = base64.b64encode(image_file.read()).decode("utf-8")
+    from pprint import pprint
+
+    try:
+        with open(image_path, "rb") as image_file:
+            image_data = base64.b64encode(image_file.read()).decode("utf-8")
+    except Exception as e:
+        print(f"🛑 Ошибка чтения изображения: {e}")
+        return {"error": "file_read_error"}
 
     url = "https://api.plant.id/v2/identify"
     headers = {"Content-Type": "application/json"}
@@ -97,11 +104,16 @@ async def identify_plant(image_path: str) -> dict:
         "plant_details": ["common_names"]
     }
 
+    print("➡️ Отправка запроса в Plant.id")
+
     async with aiohttp.ClientSession() as session:
         async with session.post(url, headers=headers, json=payload) as response:
+            print(f"⬅️ Ответ от Plant.id: {response.status}")
             if response.status != 200:
                 return {"error": f"Plant.id API error: {response.status}"}
             data = await response.json()
+
+    pprint(data)
 
     if "suggestions" not in data or not data["suggestions"]:
         return {"error": "No plant suggestions found"}
