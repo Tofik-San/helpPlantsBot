@@ -1,23 +1,10 @@
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
-from telegram import (
-    Bot,
-    Update,
-    InlineKeyboardButton,
-    InlineKeyboardMarkup,
-    ReplyKeyboardMarkup,
-    KeyboardButton,
-)
+from telegram import Bot, Update, InlineKeyboardButton, InlineKeyboardMarkup, ReplyKeyboardMarkup, KeyboardButton
+from service import get_plant_data, get_bot_info, format_plant_info_base, format_plant_info_extended, identify_plant
 import os
+import aiohttp
 import logging
-
-from service import (
-    get_plant_data,
-    get_bot_info,
-    format_plant_info_base,
-    format_plant_info_extended,
-    identify_plant
-)
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -26,6 +13,7 @@ TOKEN = os.getenv("BOT_TOKEN")
 bot = Bot(token=TOKEN)
 app = FastAPI()
 
+
 def get_keyboard():
     keyboard = [
         [KeyboardButton("❓ Help")],
@@ -33,12 +21,14 @@ def get_keyboard():
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
+
 def start(update):
     bot.send_message(
         chat_id=update.message.chat.id,
         text="🌿 BOTanik готов к работе. Отправь фото растения или выбери действие кнопками ниже.",
         reply_markup=get_keyboard()
     )
+
 
 def handle_buttons(update):
     text = update.message.text.strip()
@@ -63,6 +53,7 @@ def handle_buttons(update):
             reply_markup=get_keyboard()
         )
 
+
 @app.post("/webhook")
 async def webhook(request: Request):
     data = await request.json()
@@ -70,22 +61,26 @@ async def webhook(request: Request):
 
     if update.message and update.message.photo:
         file_id = update.message.photo[-1].file_id
-        file = bot.get_file(file_id)
+        file = await bot.get_file(file_id)
 
         if not os.path.exists("temp"):
             os.makedirs("temp")
 
         photo_path = f"temp/{file_id}.jpg"
-        file.download(photo_path)
+        file_url = file.file_path
+        async with aiohttp.ClientSession() as session:
+            async with session.get(file_url) as resp:
+                with open(photo_path, 'wb') as f:
+                    f.write(await resp.read())
 
-        bot.send_message(
+        await bot.send_message(
             chat_id=update.message.chat.id,
             text="🔄 Обрабатываю фото..."
         )
 
         result = await identify_plant(photo_path)
         if "error" in result:
-            bot.send_message(
+            await bot.send_message(
                 chat_id=update.message.chat.id,
                 text="🚫 Не удалось определить растение. Попробуйте другое фото."
             )
@@ -94,7 +89,7 @@ async def webhook(request: Request):
         latin_name = result["latin_name"]
         probability = result["probability"]
 
-        bot.send_message(
+        await bot.send_message(
             chat_id=update.message.chat.id,
             text=f"🌿 Похоже, это <b>{latin_name}</b>\n(уверенность: {probability}%)",
             parse_mode="HTML",
@@ -115,18 +110,19 @@ async def webhook(request: Request):
             if plant_list:
                 plant = plant_list[0]
                 msg = format_plant_info_base(plant) + "\n\n" + format_plant_info_extended(plant)
-                bot.send_message(
+                await bot.send_message(
                     chat_id=update.callback_query.message.chat.id,
                     text=msg,
                     parse_mode="HTML"
                 )
             else:
-                bot.send_message(
+                await bot.send_message(
                     chat_id=update.callback_query.message.chat.id,
                     text="❌ Нет информации о таком растении."
                 )
 
     return JSONResponse(content={"status": "ok"})
+
 
 if __name__ == "__main__":
     import uvicorn
