@@ -78,14 +78,14 @@ async def webhook(request: Request):
         photo_path = f"temp/{file_id}.jpg"
         file.download(photo_path)
 
-        await bot.send_message(
+        bot.send_message(
             chat_id=update.message.chat.id,
             text="🔄 Обрабатываю фото..."
         )
 
         result = await identify_plant(photo_path)
         if "error" in result:
-            await bot.send_message(
+            bot.send_message(
                 chat_id=update.message.chat.id,
                 text="🚫 Не удалось определить растение. Попробуйте другое фото."
             )
@@ -94,7 +94,7 @@ async def webhook(request: Request):
         latin_name = result["latin_name"]
         probability = result["probability"]
 
-        await bot.send_message(
+        bot.send_message(
             chat_id=update.message.chat.id,
             text=f"🌿 Похоже, это <b>{latin_name}</b>\n(уверенность: {probability}%)",
             parse_mode="HTML",
@@ -115,13 +115,13 @@ async def webhook(request: Request):
             if plant_list:
                 plant = plant_list[0]
                 msg = format_plant_info_base(plant) + "\n\n" + format_plant_info_extended(plant)
-                await bot.send_message(
+                bot.send_message(
                     chat_id=update.callback_query.message.chat.id,
                     text=msg,
                     parse_mode="HTML"
                 )
             else:
-                await bot.send_message(
+                bot.send_message(
                     chat_id=update.callback_query.message.chat.id,
                     text="❌ Нет информации о таком растении."
                 )
