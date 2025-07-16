@@ -36,3 +36,6 @@ async def webhook(request: Request):
     except Exception as e:
         logger.exception("[webhook] Error processing update")
         return {"ok": False, "error": str(e)}
+if __name__ == "__main__":
+    import uvicorn
+    uvicorn.run("main:app", host="0.0.0.0", port=8080)
