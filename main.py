@@ -3,7 +3,7 @@ import logging
 import traceback
 import base64
 from fastapi import FastAPI, Request
-from telegram import Update
+from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, ContextTypes, filters
 )
@@ -27,7 +27,16 @@ os.makedirs("temp", exist_ok=True)
 
 # --- /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text("Привет! Я бот по уходу за растениями 🌿")
+    keyboard = [
+        [KeyboardButton("📘 Инфо")],
+        [KeyboardButton("📢 Канал"), KeyboardButton("ℹ️ О проекте")]
+    ]
+    reply_markup = ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+    await update.message.reply_text(
+        "Привет! Я бот по уходу за растениями 🌿\n"
+        "Отправь фото — я распознаю растение и расскажу, как за ним ухаживать.",
+        reply_markup=reply_markup
+    )
 
 # --- Обработка фото
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -68,9 +77,20 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"[handle_photo] Ошибка: {e}\n{traceback.format_exc()}")
         await update.message.reply_text("Ошибка при распознавании растения.")
 
+# --- Обработка текстовых кнопок
+async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    text = update.message.text
+    if text == "ℹ️ О проекте":
+        await update.message.reply_text("Этот бот помогает определить растение по фото и получить советы по уходу 🌿")
+    elif text == "📢 Канал":
+        await update.message.reply_text("Наш канал: https://t.me/yourchannel")
+    elif text == "📘 Инфо":
+        await update.message.reply_text("Для работы нужен только Telegram и фото растения. Распознавание — через Plant.id.")
+
 # --- Хендлеры
 application.add_handler(CommandHandler("start", start))
 application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_buttons))
 
 # --- Инициализация
 @app.on_event("startup")
