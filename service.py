@@ -75,3 +75,40 @@ def get_bot_info():
         "🌿 Этот бот поможет тебе узнать всё о растениях.\n\n"
         "📌 Отправь название растения или выбери категорию, чтобы получить карточку с уходом, фото и советами."
     )
+
+
+# ⬇️ Новый блок: интеграция с Plant.id
+import aiohttp
+import base64
+
+PLANT_ID_API_KEY = os.getenv("PLANT_ID_API_KEY")
+
+
+async def identify_plant(image_path: str) -> dict:
+    with open(image_path, "rb") as image_file:
+        image_data = base64.b64encode(image_file.read()).decode("utf-8")
+
+    url = "https://api.plant.id/v2/identify"
+    headers = {"Content-Type": "application/json"}
+    payload = {
+        "api_key": PLANT_ID_API_KEY,
+        "images": [image_data],
+        "plant_language": "ru",
+        "plant_details": ["common_names"]
+    }
+
+    async with aiohttp.ClientSession() as session:
+        async with session.post(url, headers=headers, json=payload) as response:
+            if response.status != 200:
+                return {"error": f"Plant.id API error: {response.status}"}
+            data = await response.json()
+
+    if "suggestions" not in data or not data["suggestions"]:
+        return {"error": "No plant suggestions found"}
+
+    top = data["suggestions"][0]
+    return {
+        "latin_name": top.get("plant_name"),
+        "common_names": top.get("plant_details", {}).get("common_names", []),
+        "probability": round(top.get("probability", 0) * 100, 2)
+    }
