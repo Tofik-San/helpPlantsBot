@@ -128,7 +128,7 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif text == "📢 Канал":
         await update.message.reply_text("Наш канал: https://t.me/yourchannel")
     elif text == "📘 Инфо":
-        await update.message.reply_text("""📘 Как пользоваться ботом PROplants
+        await update.message.reply_text("""📘 Как пользоваться ботом GreenCore
 
 🧭 Как ориентироваться в ответе:
 
