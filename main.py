@@ -19,6 +19,7 @@ from telegram.ext import (
 from openai import AsyncOpenAI
 import httpx
 from limit_checker import check_and_increment_limit
+from service import get_card_by_latin_name, save_card
 
 # --- Конфиги
 TOKEN = os.getenv("BOT_TOKEN")
@@ -185,24 +186,14 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"[handle_photo] Ошибка: {e}\n{traceback.format_exc()}")
         await update.message.reply_text("Ошибка при распознавании растения.")
 
-# BLOCK 5: обработка карточки ухода через SQLite и GPT-4
+# BLOCK 5: обработка карточки ухода через PostgreSQL и GPT-4
 async def get_care_card_html(latin_name: str) -> str:
     """Return care card HTML, fetching from GPT-4 if missing."""
-    import sqlite3
     import json
 
     try:
-        conn = sqlite3.connect("plants.db")
-        conn.row_factory = sqlite3.Row
-        with conn:
-            cur = conn.execute(
-                "SELECT * FROM gpt_cards WHERE latin_name = ?", (latin_name,)
-            )
-            row = cur.fetchone()
-
-        if row:
-            data = dict(row)
-        else:
+        data = await get_card_by_latin_name(latin_name)
+        if not data:
             completion = await openai_client.chat.completions.create(
                 model="gpt-4",
                 messages=[
@@ -214,30 +205,7 @@ async def get_care_card_html(latin_name: str) -> str:
             )
             data = json.loads(completion.choices[0].message.content)
             data["latin_name"] = latin_name
-
-            with conn:
-                conn.execute(
-                    """
-                    INSERT OR REPLACE INTO gpt_cards (
-                        latin_name, name, short_description, category_type,
-                        light, watering, temperature, soil, fertilizer,
-                        care_tip, insights
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        data.get("latin_name"),
-                        data.get("name"),
-                        data.get("short_description"),
-                        data.get("category_type"),
-                        data.get("light"),
-                        data.get("watering"),
-                        data.get("temperature"),
-                        data.get("soil"),
-                        data.get("fertilizer"),
-                        data.get("care_tip"),
-                        data.get("insights"),
-                    ),
-                )
+            await save_card(data)
 
         html = (
             f"<b>{data['name']}</b>\n\n"
