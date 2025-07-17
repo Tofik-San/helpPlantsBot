@@ -3,6 +3,7 @@ import logging
 import traceback
 import base64
 import imghdr
+from datetime import datetime
 from fastapi import FastAPI, Request
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import (
@@ -24,6 +25,9 @@ app = FastAPI()
 application = Application.builder().token(TOKEN).build()
 app_state_ready = False
 
+# BLOCK 1: storage for last recognition timestamps
+user_last_request = {}
+
 os.makedirs("temp", exist_ok=True)
 
 # --- /start
@@ -42,13 +46,34 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --- Обработка фото
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
+        user_id = update.effective_user.id
+        now = datetime.utcnow()
+
+        # BLOCK 1: check for multiple photos (albums)
+        if update.message.media_group_id:
+            await update.message.reply_text(
+                "📸 Отправьте, пожалуйста, только одно фото за раз.")
+            logger.info(
+                f"[BLOCK 1] Refuse album user {user_id} at {now.isoformat()} reason=album")
+            return
+
+        # BLOCK 1: rate limiting between recognitions
+        last_time = user_last_request.get(user_id)
+        if last_time and (now - last_time).total_seconds() < 15:
+            await update.message.reply_text(
+                "⏱ Подождите 15 секунд перед новой попыткой.")
+            logger.info(
+                f"[BLOCK 1] Rate limit user {user_id} at {now.isoformat()} reason=rate_limit")
+            return
+        user_last_request[user_id] = now
+
         photo = update.message.photo[-1]
         # BLOCK 1: size check before downloading
         if photo.file_size and photo.file_size > 5 * 1024 * 1024:
             await update.message.reply_text(
                 "❌ Не удалось распознать растение. Попробуйте другое фото.")
             logger.info(
-                f"[BLOCK 1] Reject large file from user {update.effective_user.id}: {photo.file_size}")
+                f"[BLOCK 1] Reject large file from user {user_id} at {datetime.utcnow().isoformat()} size={photo.file_size} reason=size")
             return
 
         file = await context.bot.get_file(photo.file_id)
@@ -61,7 +86,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await update.message.reply_text(
                 "❌ Не удалось распознать растение. Попробуйте другое фото.")
             logger.info(
-                f"[BLOCK 1] Reject format {img_type} from user {update.effective_user.id}")
+                f"[BLOCK 1] Reject format {img_type} from user {user_id} at {datetime.utcnow().isoformat()} reason=format")
             return
 
         await update.message.reply_text("Распознаю растение…")
@@ -85,7 +110,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         is_plant_prob = result.get("is_plant_probability", 0)
         if is_plant_prob < 0.2:
             logger.info(
-                f"[BLOCK 1] Low probability {is_plant_prob} from user {update.effective_user.id}")
+                f"[BLOCK 1] Low probability {is_plant_prob} from user {user_id} at {datetime.utcnow().isoformat()} reason=probability")
             await update.message.reply_text(
                 "❌ Не удалось распознать растение. Попробуйте другое фото.")
             return
@@ -94,6 +119,8 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         if not suggestions:
             await update.message.reply_text(
                 "❌ Не удалось распознать растение. Попробуйте другое фото.")
+            logger.info(
+                f"[BLOCK 1] No suggestions for user {user_id} at {datetime.utcnow().isoformat()} prob={is_plant_prob} reason=no_suggestions")
             return
 
         top = suggestions[0]
