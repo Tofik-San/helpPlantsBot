@@ -2,6 +2,7 @@ import os
 import logging
 import traceback
 import base64
+import imghdr
 from fastapi import FastAPI, Request
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import (
@@ -42,9 +43,26 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         photo = update.message.photo[-1]
+        # BLOCK 1: size check before downloading
+        if photo.file_size and photo.file_size > 5 * 1024 * 1024:
+            await update.message.reply_text(
+                "❌ Не удалось распознать растение. Попробуйте другое фото.")
+            logger.info(
+                f"[BLOCK 1] Reject large file from user {update.effective_user.id}: {photo.file_size}")
+            return
+
         file = await context.bot.get_file(photo.file_id)
         temp_path = "temp/plant.jpg"
         await file.download_to_drive(custom_path=temp_path)
+
+        # BLOCK 1: format check
+        img_type = imghdr.what(temp_path)
+        if img_type not in ("jpeg", "png"):
+            await update.message.reply_text(
+                "❌ Не удалось распознать растение. Попробуйте другое фото.")
+            logger.info(
+                f"[BLOCK 1] Reject format {img_type} from user {update.effective_user.id}")
+            return
 
         await update.message.reply_text("Распознаю растение…")
 
@@ -63,9 +81,19 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
 
         result = response.json()
+        # BLOCK 1: probability check from Plant.id
+        is_plant_prob = result.get("is_plant_probability", 0)
+        if is_plant_prob < 0.2:
+            logger.info(
+                f"[BLOCK 1] Low probability {is_plant_prob} from user {update.effective_user.id}")
+            await update.message.reply_text(
+                "❌ Не удалось распознать растение. Попробуйте другое фото.")
+            return
+
         suggestions = result.get("suggestions", [])
         if not suggestions:
-            await update.message.reply_text("Не удалось распознать растение.")
+            await update.message.reply_text(
+                "❌ Не удалось распознать растение. Попробуйте другое фото.")
             return
 
         top = suggestions[0]
