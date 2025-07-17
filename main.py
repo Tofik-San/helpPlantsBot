@@ -204,16 +204,22 @@ async def get_care_card_html(latin_name: str) -> str | None:
                 ],
             )
             gpt_content = completion.choices[0].message.content if completion.choices else ""
-            if not gpt_content:
+            if not gpt_content or not gpt_content.strip():
                 logger.error(f"[get_care_card_html] Empty GPT response: {completion}")
-                return None
-            try:
-                data = json.loads(gpt_content)
-            except Exception as e:
+                return {"error": "Invalid GPT response"}
+            gpt_content_stripped = gpt_content.strip()
+            if not gpt_content_stripped.startswith("{"):
                 logger.error(
-                    f"[get_care_card_html] Invalid GPT response: {gpt_content}. Error: {e}"
+                    f"[get_care_card_html] Non-JSON GPT response: {gpt_content_stripped}"
                 )
-                return None
+                return {"error": "Invalid GPT response"}
+            try:
+                data = json.loads(gpt_content_stripped)
+            except json.JSONDecodeError as e:
+                logger.error(
+                    f"[get_care_card_html] JSON decode error: {e}. Content: {gpt_content_stripped}"
+                )
+                return {"error": "Invalid GPT response"}
             data["latin_name"] = latin_name
             await save_card(data)
 
@@ -242,7 +248,7 @@ async def handle_care_button(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await query.answer()
     latin_name = query.data.split(":", 1)[1]
     text = await get_care_card_html(latin_name)
-    if text is None:
+    if text is None or isinstance(text, dict):
         await query.message.reply_text("❌ Ошибка при получении карточки ухода.")
     else:
         await query.message.reply_text(text)
