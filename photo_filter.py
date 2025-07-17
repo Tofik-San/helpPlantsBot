@@ -22,7 +22,11 @@ _failures: Dict[int, int] = defaultdict(int)
 
 # BLOCK 1: встроена валидация, лимиты не горят
 async def filter_and_identify(image_path: str, user_id: int) -> Optional[dict]:
-    """Validate image and recognize plant via Plant.id."""
+    """Validate image and recognize plant via Plant.id.
+
+    Returns a dict with ``{"error": reason}`` for invalid photos so that the
+    caller can differentiate the failure reason.
+    """
     # Check image format
     img_type = imghdr.what(image_path)
     if img_type not in {"jpeg", "png"}:
@@ -30,7 +34,7 @@ async def filter_and_identify(image_path: str, user_id: int) -> Optional[dict]:
         _failures[user_id] += 1
         if _failures[user_id] >= 3:
             logger.info(f"[BLOCK1] {user_id}: three failed attempts")
-        return None
+        return {"error": "unsupported_format"}
 
     # Check file size
     if os.path.getsize(image_path) > 5 * 1024 * 1024:
@@ -38,7 +42,7 @@ async def filter_and_identify(image_path: str, user_id: int) -> Optional[dict]:
         _failures[user_id] += 1
         if _failures[user_id] >= 3:
             logger.info(f"[BLOCK1] {user_id}: three failed attempts")
-        return None
+        return {"error": "file_too_large"}
 
     # Check proportions
     try:
@@ -50,13 +54,13 @@ async def filter_and_identify(image_path: str, user_id: int) -> Optional[dict]:
             _failures[user_id] += 1
             if _failures[user_id] >= 3:
                 logger.info(f"[BLOCK1] {user_id}: three failed attempts")
-            return None
+            return {"error": "bad_proportions"}
     except Exception as e:
         logger.error(f"[BLOCK1] {user_id}: error reading image - {e}")
         _failures[user_id] += 1
         if _failures[user_id] >= 3:
             logger.info(f"[BLOCK1] {user_id}: three failed attempts")
-        return None
+        return {"error": "invalid_image"}
 
     # Read and encode image
     try:
@@ -64,7 +68,7 @@ async def filter_and_identify(image_path: str, user_id: int) -> Optional[dict]:
             image_b64 = base64.b64encode(f.read()).decode("utf-8")
     except Exception as e:
         logger.error(f"[BLOCK1] {user_id}: file read error - {e}")
-        return None
+        return {"error": "invalid_image"}
 
     payload = {"images": [image_b64], "organs": ["leaf", "flower"]}
     try:
@@ -92,7 +96,7 @@ async def filter_and_identify(image_path: str, user_id: int) -> Optional[dict]:
         _failures[user_id] += 1
         if _failures[user_id] >= 3:
             logger.info(f"[BLOCK1] {user_id}: three failed attempts")
-        return None
+        return {"error": "low_confidence"}
 
     suggestions = result.get("suggestions")
     if not suggestions:
@@ -100,7 +104,7 @@ async def filter_and_identify(image_path: str, user_id: int) -> Optional[dict]:
         _failures[user_id] += 1
         if _failures[user_id] >= 3:
             logger.info(f"[BLOCK1] {user_id}: three failed attempts")
-        return None
+        return {"error": "no_suggestions"}
 
     top = suggestions[0]
     _failures[user_id] = 0  # reset on success
