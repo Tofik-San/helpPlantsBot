@@ -185,27 +185,77 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"[handle_photo] Ошибка: {e}\n{traceback.format_exc()}")
         await update.message.reply_text("Ошибка при распознавании растения.")
 
-# BLOCK 5: GPT-обработка карточки ухода
-async def process_text_with_gpt(latin_name: str) -> str:
-    """Call GPT-3.5 to get a plant care card."""
+# BLOCK 5: обработка карточки ухода через SQLite и GPT-4
+async def get_care_card_html(latin_name: str) -> str:
+    """Return care card HTML, fetching from GPT-4 if missing."""
+    import sqlite3
+    import json
+
     try:
-        completion = await openai_client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {
-                    "role": "user",
-                    "content": (
-                        f"Составь карточку ухода за растением с латинским названием: {latin_name}"
+        conn = sqlite3.connect("plants.db")
+        conn.row_factory = sqlite3.Row
+        with conn:
+            cur = conn.execute(
+                "SELECT * FROM gpt_cards WHERE latin_name = ?", (latin_name,)
+            )
+            row = cur.fetchone()
+
+        if row:
+            data = dict(row)
+        else:
+            completion = await openai_client.chat.completions.create(
+                model="gpt-4",
+                messages=[
+                    {
+                        "role": "user",
+                        "content": f"PLACEHOLDER_FOR_PROMPT {latin_name}",
+                    }
+                ],
+            )
+            data = json.loads(completion.choices[0].message.content)
+            data["latin_name"] = latin_name
+
+            with conn:
+                conn.execute(
+                    """
+                    INSERT OR REPLACE INTO gpt_cards (
+                        latin_name, name, short_description, category_type,
+                        light, watering, temperature, soil, fertilizer,
+                        care_tip, insights
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        data.get("latin_name"),
+                        data.get("name"),
+                        data.get("short_description"),
+                        data.get("category_type"),
+                        data.get("light"),
+                        data.get("watering"),
+                        data.get("temperature"),
+                        data.get("soil"),
+                        data.get("fertilizer"),
+                        data.get("care_tip"),
+                        data.get("insights"),
                     ),
-                }
-            ],
+                )
+
+        html = (
+            f"<b>{data['name']}</b>\n\n"
+            f"{data['short_description']}\n\n"
+            f"📂 {data['category_type']}\n\n"
+            f"💡 <b>Уход:</b>\n"
+            f"☀️ Свет: {data['light']}\n"
+            f"💧 Полив: {data['watering']}\n"
+            f"🌡️ Температура: {data['temperature']}\n"
+            f"🪴 Почва: {data['soil']}\n"
+            f"🧪 Удобрения: {data['fertilizer']}\n"
+            f"✂️ Советы: {data['care_tip']}\n\n"
+            f"{data['insights']}"
         )
-        return completion.choices[0].message.content.strip()
+        return html
     except Exception as e:
-        logger.error(
-            f"[process_text_with_gpt] Ошибка: {e}\n{traceback.format_exc()}"
-        )
-        return "❌ Ошибка при запросе к GPT"
+        logger.error(f"[get_care_card_html] Ошибка: {e}\n{traceback.format_exc()}")
+        return str(e)
 
 
 async def handle_care_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -213,7 +263,7 @@ async def handle_care_button(update: Update, context: ContextTypes.DEFAULT_TYPE)
     query = update.callback_query
     await query.answer()
     latin_name = query.data.split(":", 1)[1]
-    text = await process_text_with_gpt(latin_name)
+    text = await get_care_card_html(latin_name)
     await query.message.reply_text(text)
 
 # --- Обработка текстовых кнопок
