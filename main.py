@@ -51,6 +51,10 @@ class _TokenFilter(logging.Filter):
 
 logging.getLogger().addFilter(_TokenFilter(TOKEN))
 
+# BLOCK 7: silence httpx logs and prevent propagation
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpx").propagate = False
+
 # --- Telegram + FastAPI
 app = FastAPI()
 application = Application.builder().token(TOKEN).build()
