@@ -5,7 +5,13 @@ import base64
 import imghdr
 from datetime import datetime
 from fastapi import FastAPI, Request
-from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
+from telegram import (
+    Update,
+    ReplyKeyboardMarkup,
+    KeyboardButton,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
+)
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, ContextTypes, filters
 )
@@ -132,7 +138,16 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         top = suggestions[0]
         name = top.get("plant_name", "неизвестно")
         prob = round(top.get("probability", 0) * 100, 2)
-        await update.message.reply_text(f"🌱 Похоже, это: {name} ({prob}%)")
+
+        # BLOCK 5: кнопка ухода
+        keyboard = InlineKeyboardMarkup(
+            [[InlineKeyboardButton("🧠 Уход от BOTanika", callback_data=f"care:{name}")]]
+        )
+        await context.bot.send_message(
+            chat_id=update.effective_chat.id,
+            text=f"🌱 Похоже, это: {name} ({prob}%)",
+            reply_markup=keyboard,
+        )
 
     except Exception as e:
         logger.error(f"[handle_photo] Ошибка: {e}\n{traceback.format_exc()}")
