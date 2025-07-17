@@ -28,6 +28,7 @@ PLANT_ID_API_KEY = os.getenv("PLANT_ID_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 
 openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
+DEBUG_GPT = os.getenv("DEBUG_GPT") == "1"
 
 # --- Логирование
 logging.basicConfig(level=logging.INFO)
@@ -199,27 +200,54 @@ async def get_care_card_html(latin_name: str) -> str | None:
                 messages=[
                     {
                         "role": "user",
-                        "content": f"PLACEHOLDER_FOR_PROMPT {latin_name}",
+                        "content": f"""
+Сгенерируй JSON-объект с карточкой ухода за растением по его латинскому названию: {latin_name}
+
+Формат вывода — ТОЛЬКО JSON. Никаких комментариев или описаний.
+
+Поля:
+- name: название растения (RU)
+- category_type: категория ухода и семейство
+- short_description: краткое описание внешнего вида (1–2 предложения)
+- light: требования к свету
+- watering: режим полива
+- temperature: температурный режим
+- soil: тип почвы и дренаж
+- fertilizer: подкормка (частота, удобрения)
+- care_tip: советы (прищипка, душ и т.д.)
+- insights: полезные наблюдения (2–3 предложения)
+""",
                     }
                 ],
             )
             gpt_content = completion.choices[0].message.content if completion.choices else ""
             if not gpt_content or not gpt_content.strip():
                 logger.error(f"[get_care_card_html] Empty GPT response: {completion}")
-                return {"error": "Invalid GPT response"}
+                error = {"error": "Invalid GPT response"}
+                if DEBUG_GPT:
+                    error["raw"] = str(completion)[:200]
+                return error
             gpt_content_stripped = gpt_content.strip()
-            if not gpt_content_stripped.startswith("{"):
+            if not (
+                gpt_content_stripped.startswith("{") and gpt_content_stripped.endswith("}")
+            ):
                 logger.error(
                     f"[get_care_card_html] Non-JSON GPT response: {gpt_content_stripped}"
                 )
-                return {"error": "Invalid GPT response"}
+                error = {"error": "Invalid GPT response"}
+                if DEBUG_GPT:
+                    error["raw"] = gpt_content_stripped[:200]
+                return error
             try:
                 data = json.loads(gpt_content_stripped)
             except json.JSONDecodeError as e:
                 logger.error(
                     f"[get_care_card_html] JSON decode error: {e}. Content: {gpt_content_stripped}"
                 )
-                return {"error": "Invalid GPT response"}
+                error = {"error": "Invalid GPT response"}
+                if DEBUG_GPT:
+                    error["raw"] = gpt_content_stripped[:200]
+                return error
             data["latin_name"] = latin_name
             await save_card(data)
 
@@ -247,11 +275,16 @@ async def handle_care_button(update: Update, context: ContextTypes.DEFAULT_TYPE)
     query = update.callback_query
     await query.answer()
     latin_name = query.data.split(":", 1)[1]
-    text = await get_care_card_html(latin_name)
-    if text is None or isinstance(text, dict):
+    result = await get_care_card_html(latin_name)
+    if result is None:
         await query.message.reply_text("❌ Ошибка при получении карточки ухода.")
+    elif isinstance(result, dict):
+        msg = "❌ Ошибка при получении карточки ухода."
+        if DEBUG_GPT and result.get("raw"):
+            msg += f"\n\nRAW:\n{result['raw']}"
+        await query.message.reply_text(msg)
     else:
-        await query.message.reply_text(text)
+        await query.message.reply_text(result)
 
 # --- Обработка текстовых кнопок
 async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
