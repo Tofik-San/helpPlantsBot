@@ -32,6 +32,25 @@ openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# --- Filter to avoid leaking the bot token in logs
+class _TokenFilter(logging.Filter):
+    def __init__(self, token: str) -> None:
+        super().__init__()
+        self.token = token or ""
+
+    def filter(self, record: logging.LogRecord) -> bool:  # pragma: no cover - simple sanitization
+        if self.token:
+            token_mask = "<TOKEN>"
+            record.msg = str(record.msg).replace(self.token, token_mask)
+            if record.args:
+                record.args = tuple(
+                    str(arg).replace(self.token, token_mask) if isinstance(arg, str) else arg
+                    for arg in record.args
+                )
+        return True
+
+logging.getLogger().addFilter(_TokenFilter(TOKEN))
+
 # --- Telegram + FastAPI
 app = FastAPI()
 application = Application.builder().token(TOKEN).build()
