@@ -71,10 +71,7 @@ def strip_tags(text: str) -> str:
     import re
     return re.sub(r"<[^>]+>", "", text)
 
-
 def clean_description(data: dict) -> dict:
-    def clean_description(data: dict) -> dict:
-    
     name = data.get("name", "").strip()
     desc = data.get("short_description", "").strip()
 
@@ -84,6 +81,7 @@ def clean_description(data: dict) -> dict:
 
     data["short_description"] = desc_cleaned
     return data
+
 
 # --- /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
