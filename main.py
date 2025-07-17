@@ -91,7 +91,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             return
 
         # BLOCK 2: daily usage limit
-        if not await check_daily_limit(str(user_id)):
+        if not await check_daily_limit(user_id):
             await update.message.reply_text("🚫 Лимит на сегодня исчерпан. Попробуйте завтра.")
             return
 
