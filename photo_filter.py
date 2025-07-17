@@ -20,6 +20,25 @@ logger = logging.getLogger(__name__)
 _failures: Dict[int, int] = defaultdict(int)
 
 
+async def is_image_valid(image_path: str) -> bool:
+    """Run basic checks to validate image before sending to Plant.id."""
+    img_type = imghdr.what(image_path)
+    if img_type not in {"jpeg", "png"}:
+        return False
+    if os.path.getsize(image_path) > 5 * 1024 * 1024:
+        return False
+    try:
+        with Image.open(image_path) as img:
+            width, height = img.size
+        ratio = max(width, height) / min(width, height)
+        if ratio > 3:
+            return False
+    except Exception as e:  # pragma: no cover - PIL errors are logged
+        logger.error(f"[is_image_valid] {e}")
+        return False
+    return True
+
+
 async def filter_and_identify(image_path: str, user_id: int) -> Optional[dict]:
     """Validate image and recognize plant via Plant.id."""
     # Check image format
