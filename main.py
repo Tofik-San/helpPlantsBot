@@ -67,6 +67,23 @@ user_last_request = {}
 
 os.makedirs("temp", exist_ok=True)
 
+def strip_tags(text: str) -> str:
+    import re
+    return re.sub(r"<[^>]+>", "", text)
+
+
+def clean_description(data: dict) -> dict:
+    """Remove plant name duplicates and HTML tags from short_description."""
+    name = data.get("name", "").strip()
+    desc = data.get("short_description", "").strip()
+
+    desc_cleaned = strip_tags(desc)
+    if name and name in desc_cleaned:
+        desc_cleaned = desc_cleaned.replace(name, "").strip(" .,\n")
+
+    data["short_description"] = desc_cleaned
+    return data
+
 # --- /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     keyboard = [
@@ -254,6 +271,8 @@ async def get_care_card_html(latin_name: str) -> str | None:
                 return error
             data["latin_name"] = latin_name
             await save_card(data)
+
+        data = clean_description(data)
 
         html = (
             f"<b>{data['name']}</b>\n\n"
