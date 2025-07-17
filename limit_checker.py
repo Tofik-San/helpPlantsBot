@@ -13,7 +13,7 @@ async def get_pool():
         _pool = await asyncpg.create_pool(DATABASE_URL)
     return _pool
 
-async def check_daily_limit(user_id: str) -> bool:
+async def check_and_increment_limit(user_id: str) -> bool:
     """Check and update daily recognition limit.
 
     Returns True if user can perform recognition.
