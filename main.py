@@ -13,8 +13,10 @@ from telegram import (
     InlineKeyboardMarkup,
 )
 from telegram.ext import (
-    Application, CommandHandler, MessageHandler, ContextTypes, filters
+    Application, CommandHandler, MessageHandler, CallbackQueryHandler,
+    ContextTypes, filters
 )
+from openai import AsyncOpenAI
 import httpx
 from limit_checker import check_and_increment_limit
 
@@ -22,6 +24,9 @@ from limit_checker import check_and_increment_limit
 TOKEN = os.getenv("BOT_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 PLANT_ID_API_KEY = os.getenv("PLANT_ID_API_KEY")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
 
 # --- Логирование
 logging.basicConfig(level=logging.INFO)
@@ -157,6 +162,37 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.error(f"[handle_photo] Ошибка: {e}\n{traceback.format_exc()}")
         await update.message.reply_text("Ошибка при распознавании растения.")
 
+# BLOCK 5: GPT-обработка карточки ухода
+async def process_text_with_gpt(latin_name: str) -> str:
+    """Call GPT-3.5 to get a plant care card."""
+    try:
+        completion = await openai_client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[
+                {
+                    "role": "user",
+                    "content": (
+                        f"Составь карточку ухода за растением с латинским названием: {latin_name}"
+                    ),
+                }
+            ],
+        )
+        return completion.choices[0].message.content.strip()
+    except Exception as e:
+        logger.error(
+            f"[process_text_with_gpt] Ошибка: {e}\n{traceback.format_exc()}"
+        )
+        return "❌ Ошибка при запросе к GPT"
+
+
+async def handle_care_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle care button callbacks."""
+    query = update.callback_query
+    await query.answer()
+    latin_name = query.data.split(":", 1)[1]
+    text = await process_text_with_gpt(latin_name)
+    await query.message.reply_text(text)
+
 # --- Обработка текстовых кнопок
 async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
@@ -257,6 +293,7 @@ https://t.me/BOTanikPlants
 # --- Хендлеры
 application.add_handler(CommandHandler("start", start))
 application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+application.add_handler(CallbackQueryHandler(handle_care_button))
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_buttons))
 
 # --- Инициализация
