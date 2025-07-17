@@ -240,6 +240,10 @@ async def get_care_card_html(latin_name: str) -> str | None:
                 return error
             try:
                 data = json.loads(gpt_content_stripped)
+                if isinstance(data.get("category_type"), dict):
+                    data["category_type"] = ", ".join(
+                        str(v) for v in data["category_type"].values()
+                    )
             except json.JSONDecodeError as e:
                 logger.error(
                     f"[get_care_card_html] JSON decode error: {e}. Content: {gpt_content_stripped}"
