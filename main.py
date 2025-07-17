@@ -187,7 +187,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("Ошибка при распознавании растения.")
 
 # BLOCK 5: обработка карточки ухода через PostgreSQL и GPT-4
-async def get_care_card_html(latin_name: str) -> str:
+async def get_care_card_html(latin_name: str) -> str | None:
     """Return care card HTML, fetching from GPT-4 if missing."""
     import json
 
@@ -203,7 +203,17 @@ async def get_care_card_html(latin_name: str) -> str:
                     }
                 ],
             )
-            data = json.loads(completion.choices[0].message.content)
+            gpt_content = completion.choices[0].message.content if completion.choices else ""
+            if not gpt_content:
+                logger.error(f"[get_care_card_html] Empty GPT response: {completion}")
+                return None
+            try:
+                data = json.loads(gpt_content)
+            except Exception as e:
+                logger.error(
+                    f"[get_care_card_html] Invalid GPT response: {gpt_content}. Error: {e}"
+                )
+                return None
             data["latin_name"] = latin_name
             await save_card(data)
 
@@ -232,7 +242,10 @@ async def handle_care_button(update: Update, context: ContextTypes.DEFAULT_TYPE)
     await query.answer()
     latin_name = query.data.split(":", 1)[1]
     text = await get_care_card_html(latin_name)
-    await query.message.reply_text(text)
+    if text is None:
+        await query.message.reply_text("❌ Ошибка при получении карточки ухода.")
+    else:
+        await query.message.reply_text(text)
 
 # --- Обработка текстовых кнопок
 async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
