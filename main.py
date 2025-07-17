@@ -74,6 +74,7 @@ def strip_tags(text: str) -> str:
 
 def clean_description(data: dict) -> dict:
     def clean_description(data: dict) -> dict:
+    
     name = data.get("name", "").strip()
     desc = data.get("short_description", "").strip()
 
