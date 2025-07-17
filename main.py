@@ -73,13 +73,13 @@ def strip_tags(text: str) -> str:
 
 
 def clean_description(data: dict) -> dict:
-    """Remove plant name duplicates and HTML tags from short_description."""
+    def clean_description(data: dict) -> dict:
     name = data.get("name", "").strip()
     desc = data.get("short_description", "").strip()
 
     desc_cleaned = strip_tags(desc)
-    if name and name in desc_cleaned:
-        desc_cleaned = desc_cleaned.replace(name, "").strip(" .,\n")
+    if name and desc_cleaned.startswith(name):
+        desc_cleaned = desc_cleaned[len(name):].strip(" .,\n")
 
     data["short_description"] = desc_cleaned
     return data
