@@ -10,6 +10,7 @@ from telegram.ext import (
     Application, CommandHandler, MessageHandler, ContextTypes, filters
 )
 import httpx
+from limit_checker import check_daily_limit
 
 # --- Конфиги
 TOKEN = os.getenv("BOT_TOKEN")
@@ -87,6 +88,11 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 "❌ Не удалось распознать растение. Попробуйте другое фото.")
             logger.info(
                 f"[BLOCK 1] Reject format {img_type} from user {user_id} at {datetime.utcnow().isoformat()} reason=format")
+            return
+
+        # BLOCK 2: daily usage limit
+        if not await check_daily_limit(str(user_id)):
+            await update.message.reply_text("🚫 Лимит на сегодня исчерпан. Попробуйте завтра.")
             return
 
         await update.message.reply_text("Распознаю растение…")
