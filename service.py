@@ -1,6 +1,7 @@
 import os
 import logging
 import aiohttp
+from urllib.parse import urlparse
 
 PLANT_ID_API_KEY = os.getenv("PLANT_ID_API_KEY")
 logger = logging.getLogger(__name__)
@@ -41,10 +42,14 @@ async def identify_plant(image_path: str) -> dict:
 # --- PostgreSQL connection pool
 import asyncpg
 
-PG_HOST = os.getenv("PG_HOST")
-PG_USER = os.getenv("PG_USER")
-PG_PASSWORD = os.getenv("PG_PASSWORD")
-PG_DB = os.getenv("PG_DB")
+DATABASE_URL = os.getenv("DATABASE_URL")
+parsed = urlparse(DATABASE_URL) if DATABASE_URL else None
+
+PG_USER = parsed.username if parsed else None
+PG_PASSWORD = parsed.password if parsed else None
+PG_HOST = parsed.hostname if parsed else None
+PG_PORT = parsed.port if parsed else None
+PG_DB = parsed.path[1:] if parsed and parsed.path.startswith('/') else None
 
 _pool = None
 
@@ -54,6 +59,7 @@ async def get_pool():
     if _pool is None:
         _pool = await asyncpg.create_pool(
             host=PG_HOST,
+            port=PG_PORT,
             user=PG_USER,
             password=PG_PASSWORD,
             database=PG_DB,
