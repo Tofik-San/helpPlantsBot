@@ -3,7 +3,7 @@ from limits.rate_limit import (
     check_rate_limit,
     register_photo_usage,
 )
-from photo_filter import filter_and_identify
+from photo_filter import filter_and_identify, is_image_valid
 
 
 # BLOCK 1:
@@ -13,6 +13,9 @@ async def handle_photo(user_id: int, image_path: str) -> str:
         return "❌ Лимит распознаваний на сегодня исчерпан."
     if not check_rate_limit(user_id):
         return "⌛ Подождите немного перед следующим распознаванием."
+
+    if not await is_image_valid(image_path):
+        return "❌ На фото не распознано растение. Попробуйте другое изображение."
 
     result = await filter_and_identify(image_path, user_id)
 
