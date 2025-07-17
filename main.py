@@ -1,13 +1,12 @@
 import os
 import logging
 import traceback
-import base64
 from fastapi import FastAPI, Request
 from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, ContextTypes, filters
 )
-import httpx
+from photo_handler import handle_photo as process_photo
 
 # --- Конфиги
 TOKEN = os.getenv("BOT_TOKEN")
@@ -41,41 +40,20 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # --- Обработка фото
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
+        user_id = update.effective_user.id
         photo = update.message.photo[-1]
         file = await context.bot.get_file(photo.file_id)
-        temp_path = "temp/plant.jpg"
-        await file.download_to_drive(custom_path=temp_path)
+        image_path = f"temp/{user_id}.jpg"
+        os.makedirs("temp", exist_ok=True)
+        await file.download_to_drive(image_path)
 
-        await update.message.reply_text("Распознаю растение…")
-
-        with open(temp_path, "rb") as image_file:
-            image_bytes = image_file.read()
-            image_b64 = base64.b64encode(image_bytes).decode("utf-8")
-
-        async with httpx.AsyncClient() as client:
-            response = await client.post(
-                "https://api.plant.id/v2/identify",
-                headers={"Api-Key": PLANT_ID_API_KEY},
-                json={
-                    "images": [image_b64],
-                    "organs": ["leaf", "flower"]
-                }
-            )
-
-        result = response.json()
-        suggestions = result.get("suggestions", [])
-        if not suggestions:
-            await update.message.reply_text("Не удалось распознать растение.")
-            return
-
-        top = suggestions[0]
-        name = top.get("plant_name", "неизвестно")
-        prob = round(top.get("probability", 0) * 100, 2)
-        await update.message.reply_text(f"🌱 Похоже, это: {name} ({prob}%)")
+        await update.message.reply_text("🧠 Обрабатываю фото…")
+        result = await process_photo(user_id, image_path)
+        await update.message.reply_text(result)
 
     except Exception as e:
         logger.error(f"[handle_photo] Ошибка: {e}\n{traceback.format_exc()}")
-        await update.message.reply_text("Ошибка при распознавании растения.")
+        await update.message.reply_text("⚠️ Ошибка при распознавании растения.")
 
 # --- Обработка текстовых кнопок
 async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
