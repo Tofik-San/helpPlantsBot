@@ -120,12 +120,6 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         result = response.json()
         # BLOCK 1: probability check from Plant.id
         is_plant_prob = result.get("is_plant_probability", 0)
-        if is_plant_prob < 0.2:
-            logger.info(
-                f"[BLOCK 1] Low probability {is_plant_prob} from user {user_id} at {datetime.utcnow().isoformat()} reason=probability")
-            await update.message.reply_text(
-                "❌ Не удалось распознать растение. Попробуйте другое фото.")
-            return
 
         suggestions = result.get("suggestions", [])
         if not suggestions:
@@ -139,15 +133,25 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         name = top.get("plant_name", "неизвестно")
         prob = round(top.get("probability", 0) * 100, 2)
 
-        # BLOCK 5: кнопка ухода
-        keyboard = InlineKeyboardMarkup(
-            [[InlineKeyboardButton("🧠 Уход от BOTanika", callback_data=f"care:{name}")]]
-        )
-        await context.bot.send_message(
-            chat_id=update.effective_chat.id,
-            text=f"🌱 Похоже, это: {name} ({prob}%)",
-            reply_markup=keyboard,
-        )
+        # BLOCK 1.2: фильтрация мусора
+        if is_plant_prob >= 0.2:
+            # BLOCK 5: кнопка ухода
+            keyboard = InlineKeyboardMarkup(
+                [[InlineKeyboardButton("🧠 Уход от BOTanika", callback_data=f"care:{name}")]]
+            )
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=f"🌱 Похоже, это: {name} ({prob}%)",
+                reply_markup=keyboard,
+            )
+        else:
+            logger.info(
+                f"[BLOCK 1.2] Low probability {is_plant_prob} for user {user_id}"
+            )
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text="❌ Не удалось распознать растение. Попробуйте другое фото.",
+            )
 
     except Exception as e:
         logger.error(f"[handle_photo] Ошибка: {e}\n{traceback.format_exc()}")
