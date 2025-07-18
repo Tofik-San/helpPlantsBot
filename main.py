@@ -21,6 +21,18 @@ import httpx
 from limit_checker import check_and_increment_limit
 from service import get_card_by_latin_name, save_card
 
+
+def ensure_str_fields(d: dict) -> dict:
+    result = {}
+    for k, v in d.items():
+        if isinstance(v, dict):
+            result[k] = ", ".join(str(val) for val in v.values())
+        elif not isinstance(v, str):
+            result[k] = str(v)
+        else:
+            result[k] = v
+    return result
+
 # --- Конфиги
 TOKEN = os.getenv("BOT_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
@@ -281,6 +293,7 @@ async def get_care_card_html(latin_name: str) -> str | None:
   "fertilizer": "...",
   "care_tip": "...",
   "insights": "..."
+}}
 
 ✂️ Поля:
 – name: Название растения и сорта (RU)
@@ -407,7 +420,8 @@ async def handle_care_button(update: Update, context: ContextTypes.DEFAULT_TYPE)
 # --- Обработка текстовых кнопок
 async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
-    if "о проекте" in text.lower() or "ℹ️ о проекте" in text.lower():
+    if text == "ℹ️ О проекте":
+    if "о проекте" in text.lower():
         await update.message.reply_text(
             """🌿 О проекте: GreenCore
 
@@ -472,7 +486,7 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
 🔍 После распознавания бот покажет название и уровень уверенности:
 – 🟢 85–100% — совпадение почти наверняка
 – 🟡 60–84% — возможно, стоит перепроверить
-– 🔴 менее 60% — лучше отправить другое фото
+– 🔴 <60% — лучше отправить другое фото
 
 💡 Если уверенность низкая:
 – Сфотографируйте растение под другим углом
