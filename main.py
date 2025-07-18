@@ -407,8 +407,7 @@ async def handle_care_button(update: Update, context: ContextTypes.DEFAULT_TYPE)
 # --- Обработка текстовых кнопок
 async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
-    if text == "ℹ️ О проекте":
-    if "о проекте" in text.lower():
+    if "о проекте" in text.lower() or "ℹ️ о проекте" in text.lower():
         await update.message.reply_text(
             """🌿 О проекте: GreenCore
 
