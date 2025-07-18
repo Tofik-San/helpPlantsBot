@@ -117,6 +117,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    # Cast user_id to string since the DB column is TEXT
     user_id = str(update.effective_user.id)
 
     if update.message.media_group_id:
