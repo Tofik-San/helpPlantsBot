@@ -273,7 +273,6 @@ async def get_care_card_html(latin_name: str) -> str | None:
 
 📦 Структура:
 {
->>>>>>> HEAD@{1}
   "name": "...",
   "category_type": "...",
   "short_description": "...",
@@ -284,7 +283,6 @@ async def get_care_card_html(latin_name: str) -> str | None:
   "fertilizer": "...",
   "care_tip": "...",
   "insights": "..."
-<<<<<<< HEAD
 }}
 
 ✂️ Поля:
