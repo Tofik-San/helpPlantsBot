@@ -281,7 +281,6 @@ async def get_care_card_html(latin_name: str) -> str | None:
   "fertilizer": "...",
   "care_tip": "...",
   "insights": "..."
-}}
 
 ✂️ Поля:
 – name: Название растения и сорта (RU)
