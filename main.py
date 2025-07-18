@@ -229,16 +229,15 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def get_care_card_html(latin_name: str) -> str | None:
     """Return care card HTML, fetching from gpt-4-turbo if missing."""
     import json
+    import html
+    from loguru import logger
 
     try:
         data = await get_card_by_latin_name(latin_name)
         if not data:
-            completion = await openai_client.chat.completions.create(
-                model="gpt-4-turbo",
-                messages=[
-                    {
-                        "role": "user",
-                        "content":f"""
+            prompt = {
+                "role": "user",
+                "content": f"""
 Ты — ботаник-эксперт с академическим подходом. Пишешь строго, чётко, без лишнего. Используешь только проверенные источники.
 
 🔧 Задача: по латинскому названию растения {latin_name} сгенерировать точную и минималистичную карточку ухода в JSON-формате.  
@@ -271,78 +270,50 @@ async def get_care_card_html(latin_name: str) -> str | None:
   "insights": "..."
 }}
 
-✂️ Пояснение к полям:
-– name: Пример — "Фикус каучуконосный (Ficus elastica)"  
-– category_type: Назначение и семейство  
-– short_description: Внешний вид (1–2 предложения)  
-– light: Свет и расположение  
-– watering: Частота, объём, условия  
-– temperature: Температурный режим  
-– soil: Тип, дренаж, пересадка  
-– fertilizer: Названия, периодичность  
-– care_tip: Практические советы  
-– insights: Происхождение, лайфхаки, климат
-
 📌 Вывод: Только JSON. Готовый к вставке в базу.
 """
-,
-                    }
-                ],
+            }
+
+            completion = await openai_client.chat.completions.create(
+                model="gpt-4-turbo",
+                messages=[prompt],
             )
-            gpt_content = completion.choices[0].message.content if completion.choices else ""
-            if not gpt_content or not gpt_content.strip():
-                logger.error(f"[get_care_card_html] Empty GPT response: {completion}")
-                error = {"error": "Invalid GPT response"}
-                if DEBUG_GPT:
-                    error["raw"] = str(completion)[:200]
-                return error
-            gpt_content_stripped = gpt_content.strip()
-            if not (
-                gpt_content_stripped.startswith("{") and gpt_content_stripped.endswith("}")
-            ):
-                logger.error(
-                    f"[get_care_card_html] Non-JSON GPT response: {gpt_content_stripped}"
-                )
-                error = {"error": "Invalid GPT response"}
-                if DEBUG_GPT:
-                    error["raw"] = gpt_content_stripped[:200]
-                return error
+
+            gpt_raw = completion.choices[0].message.content.strip()
+            gpt_clean = gpt_raw.strip('`json ').strip()
+
             try:
-                data = json.loads(gpt_content_stripped)
+                data = json.loads(gpt_clean)
                 if isinstance(data.get("category_type"), dict):
                     data["category_type"] = ", ".join(
                         str(v) for v in data["category_type"].values()
                     )
-            except json.JSONDecodeError as e:
-                logger.error(
-                    f"[get_care_card_html] JSON decode error: {e}. Content: {gpt_content_stripped}"
-                )
-                error = {"error": "Invalid GPT response"}
-                if DEBUG_GPT:
-                    error["raw"] = gpt_content_stripped[:200]
-                return error
-            data["latin_name"] = latin_name
-            await save_card(data)
+                data["latin_name"] = latin_name
+                await save_card(data)
+            except Exception as e:
+                logger.error(f"[get_care_card_html] JSON decode error: {e}\nGPT raw: {gpt_raw}")
+                return f"<b>Ошибка разбора ответа GPT</b>\n\n<pre>{html.escape(gpt_raw[:1500])}</pre>"
 
         data = clean_description(data)
 
-        html = (
-            f"<b>{data['name']}</b>\n\n"
-            f"{data['short_description']}\n\n"
-            f"📂 {data['category_type']}\n\n"
+        html_result = (
+            f"<b>{html.escape(data['name'])}</b>\n\n"
+            f"{html.escape(data['short_description'])}\n\n"
+            f"📂 {html.escape(data['category_type'])}\n\n"
             f"💡 <b>Уход:</b>\n"
-            f"☀️ Свет: {data['light']}\n"
-            f"💧 Полив: {data['watering']}\n"
-            f"🌡️ Температура: {data['temperature']}\n"
-            f"🪴 Почва: {data['soil']}\n"
-            f"🧪 Удобрения: {data['fertilizer']}\n"
-            f"✂️ Советы: {data['care_tip']}\n\n"
-            f"{data['insights']}"
+            f"☀️ Свет: {html.escape(data['light'])}\n"
+            f"💧 Полив: {html.escape(data['watering'])}\n"
+            f"🌡️ Температура: {html.escape(data['temperature'])}\n"
+            f"🪴 Почва: {html.escape(data['soil'])}\n"
+            f"🧪 Удобрения: {html.escape(data['fertilizer'])}\n"
+            f"✂️ Советы: {html.escape(data['care_tip'])}\n\n"
+            f"{html.escape(data['insights'])}"
         )
-        return html
+        return html_result
+
     except Exception as e:
-        logger.error(f"[get_care_card_html] Ошибка: {e}\n{traceback.format_exc()}")
-        return str(e)
+        logger.error(f"[get_care_card_html] Unexpected error: {e}")
+        return f"<b>Ошибка обработки карточки:</b>\n\n<pre>{html.escape(str(e))}</pre>"
 
 
 async def handle_care_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
