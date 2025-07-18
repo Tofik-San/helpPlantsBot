@@ -227,37 +227,62 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # BLOCK 5: обработка карточки ухода через PostgreSQL и GPT-4
 async def get_care_card_html(latin_name: str) -> str | None:
-    """Return care card HTML, fetching from GPT-4 if missing."""
     import json
 
     try:
         data = await get_card_by_latin_name(latin_name)
         if not data:
             completion = await openai_client.chat.completions.create(
-                model="gpt-4",
+                model="gpt-3.5-turbo",
                 messages=[
                     {
                         "role": "user",
                         "content": f"""
-Сгенерируй JSON-объект с карточкой ухода за растением по его латинскому названию: {latin_name}
+Сгенерируй JSON-объект с данными по уходу за растением по латинскому названию: {latin_name}
 
-Формат вывода — ТОЛЬКО JSON. Никаких комментариев или описаний.
+🔒 Правила:
+– ТОЛЬКО JSON. Без пояснений, комментариев, заголовков
+– Никаких лишних полей. Строго 10 ключей
+– Без Markdown, HTML, спецсимволов и эмодзи
+– Не добавляй поле "image", "description", "notes" и др.
+– Максимум 300 символов на каждое поле
+– Все поля — строки. Без вложенности
 
-Поля:
-- name: название растения (RU)
-- category_type: категория ухода и семейство
-- short_description: краткое описание внешнего вида (1–2 предложения)
-- light: требования к свету
-- watering: режим полива
-- temperature: температурный режим
-- soil: тип почвы и дренаж
-- fertilizer: подкормка (частота, удобрения)
-- care_tip: советы (прищипка, душ и т.д.)
-- insights: полезные наблюдения (2–3 предложения)
+🧠 Требуется:
+– Учитывай сорт (если указан). Не пиши общие данные по виду
+– Если данных по сорту мало — напиши только проверенные
+– Не придумывай и не заполняй, если нет уверенности
+
+📦 Структура:
+{{
+  "name": "...",
+  "category_type": "...",
+  "short_description": "...",
+  "light": "...",
+  "watering": "...",
+  "temperature": "...",
+  "soil": "...",
+  "fertilizer": "...",
+  "care_tip": "...",
+  "insights": "..."
+}}
+
+✂️ Поля:
+– name: Название растения и сорта (RU)
+– category_type: Назначение (Комнатное, Садовое и т.п.) + семейство
+– short_description: Внешний вид (1–2 предложения)
+– light: Свет и расположение (юг, рассеянный и т.д.)
+– watering: Полив (объём, частота, просушка)
+– temperature: Оптимальные значения и пределы
+– soil: Грунт, дренаж, пересадка
+– fertilizer: Удобрения, периоды, названия
+– care_tip: 1–2 совета (прищипка, опрыскивание и др.)
+– insights: Происхождение, лайфхаки, условия среды
 """,
                     }
                 ],
             )
+
             gpt_content = completion.choices[0].message.content if completion.choices else ""
             if not gpt_content or not gpt_content.strip():
                 logger.error(f"[get_care_card_html] Empty GPT response: {completion}")
@@ -265,6 +290,7 @@ async def get_care_card_html(latin_name: str) -> str | None:
                 if DEBUG_GPT:
                     error["raw"] = str(completion)[:200]
                 return error
+
             gpt_content_stripped = gpt_content.strip()
             if not (
                 gpt_content_stripped.startswith("{") and gpt_content_stripped.endswith("}")
@@ -276,12 +302,11 @@ async def get_care_card_html(latin_name: str) -> str | None:
                 if DEBUG_GPT:
                     error["raw"] = gpt_content_stripped[:200]
                 return error
+
             try:
                 data = json.loads(gpt_content_stripped)
                 if isinstance(data.get("category_type"), dict):
-                    data["category_type"] = ", ".join(
-                        str(v) for v in data["category_type"].values()
-                    )
+                    data["category_type"] = ", ".join(str(v) for v in data["category_type"].values())
             except json.JSONDecodeError as e:
                 logger.error(
                     f"[get_care_card_html] JSON decode error: {e}. Content: {gpt_content_stripped}"
@@ -290,7 +315,16 @@ async def get_care_card_html(latin_name: str) -> str | None:
                 if DEBUG_GPT:
                     error["raw"] = gpt_content_stripped[:200]
                 return error
+
+            for key in data:
+                if isinstance(data[key], str) and len(data[key]) > 300:
+                    data[key] = data[key][:297].rstrip() + "..."
+
             data["latin_name"] = latin_name
+
+            if DEBUG_GPT:
+                logger.info(f"[GPT_RAW] {json.dumps(data, ensure_ascii=False)}")
+
             await save_card(data)
 
         data = clean_description(data)
@@ -309,11 +343,16 @@ async def get_care_card_html(latin_name: str) -> str | None:
             f"{data['insights']}"
         )
         return html
+
     except Exception as e:
         logger.error(f"[get_care_card_html] Ошибка: {e}\n{traceback.format_exc()}")
         return str(e)
 
 
+<<<<<<< HEAD
+=======
+
+>>>>>>> 0b60890 (💡 Обновлён промт для GPT: gpt-3.5-turbo, лимит 300 символов, логирование DEBUG_GPT)
 async def handle_care_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle care button callbacks."""
     query = update.callback_query
