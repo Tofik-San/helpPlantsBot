@@ -2,28 +2,86 @@ import os
 import logging
 import traceback
 import base64
+import imghdr
+from datetime import datetime
 from fastapi import FastAPI, Request
-from telegram import Update, ReplyKeyboardMarkup, KeyboardButton
-from telegram.ext import (
-    Application, CommandHandler, MessageHandler, ContextTypes, filters
+from telegram import (
+    Update,
+    ReplyKeyboardMarkup,
+    KeyboardButton,
+    InlineKeyboardButton,
+    InlineKeyboardMarkup,
 )
+from telegram.ext import (
+    Application, CommandHandler, MessageHandler, CallbackQueryHandler,
+    ContextTypes, filters
+)
+from openai import AsyncOpenAI
 import httpx
+from limit_checker import check_and_increment_limit
+from service import get_card_by_latin_name, save_card
 
 # --- Конфиги
 TOKEN = os.getenv("BOT_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 PLANT_ID_API_KEY = os.getenv("PLANT_ID_API_KEY")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
+DEBUG_GPT = os.getenv("DEBUG_GPT") == "1"
 
 # --- Логирование
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+# --- Filter to avoid leaking the bot token in logs
+class _TokenFilter(logging.Filter):
+    def __init__(self, token: str) -> None:
+        super().__init__()
+        self.token = token or ""
+
+    def filter(self, record: logging.LogRecord) -> bool:  # pragma: no cover - simple sanitization
+        if self.token:
+            token_mask = "<TOKEN>"
+            record.msg = str(record.msg).replace(self.token, token_mask)
+            if record.args:
+                record.args = tuple(
+                    str(arg).replace(self.token, token_mask) if isinstance(arg, str) else arg
+                    for arg in record.args
+                )
+        return True
+
+logging.getLogger().addFilter(_TokenFilter(TOKEN))
+
+# BLOCK 7: silence httpx logs and prevent propagation
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("httpx").propagate = False
 
 # --- Telegram + FastAPI
 app = FastAPI()
 application = Application.builder().token(TOKEN).build()
 app_state_ready = False
 
+# BLOCK 1: storage for last recognition timestamps
+user_last_request = {}
+
 os.makedirs("temp", exist_ok=True)
+
+def strip_tags(text: str) -> str:
+    import re
+    return re.sub(r"<[^>]+>", "", text)
+
+def clean_description(data: dict) -> dict:
+    name = data.get("name", "").strip()
+    desc = data.get("short_description", "").strip()
+
+    desc_cleaned = strip_tags(desc)
+    if name and desc_cleaned.startswith(name):
+        desc_cleaned = desc_cleaned[len(name):].strip(" .,\n")
+
+    data["short_description"] = desc_cleaned
+    return data
+
 
 # --- /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -35,18 +93,76 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
         "Привет! Я BOTanik! Добро пожаловать в мою лабораторию GreenCore. 🌿\n"
         "Отправь фото — я распознаю растение и расскажу, как за ним ухаживать.",
-        reply_markup=reply_markup
+        reply_markup=reply_markup,
+        parse_mode="HTML",
     )
 
 # --- Обработка фото
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
+        user_id = update.effective_user.id
+        now = datetime.utcnow()
+
+        # BLOCK 1: check for multiple photos (albums)
+        if update.message.media_group_id:
+            await update.message.reply_text(
+                "📸 Отправьте, пожалуйста, только одно фото за раз.",
+                parse_mode="HTML",
+            )
+            logger.info(
+                f"[BLOCK 1] Refuse album user {user_id} at {now.isoformat()} reason=album")
+            return
+
+        # BLOCK 1: rate limiting between recognitions
+        last_time = user_last_request.get(user_id)
+        if last_time and (now - last_time).total_seconds() < 15:
+            await update.message.reply_text(
+                "⏱ Подождите 15 секунд перед новой попыткой.",
+                parse_mode="HTML",
+            )
+            logger.info(
+                f"[BLOCK 1] Rate limit user {user_id} at {now.isoformat()} reason=rate_limit")
+            return
+        user_last_request[user_id] = now
+
         photo = update.message.photo[-1]
+        # BLOCK 1: size check before downloading
+        if photo.file_size and photo.file_size > 5 * 1024 * 1024:
+            await update.message.reply_text(
+                "❌ Не удалось распознать растение. Попробуйте другое фото.",
+                parse_mode="HTML",
+            )
+            logger.info(
+                f"[BLOCK 1] Reject large file from user {user_id} at {datetime.utcnow().isoformat()} size={photo.file_size} reason=size")
+            return
+
         file = await context.bot.get_file(photo.file_id)
         temp_path = "temp/plant.jpg"
         await file.download_to_drive(custom_path=temp_path)
 
-        await update.message.reply_text("Распознаю растение…")
+        # BLOCK 1: format check
+        img_type = imghdr.what(temp_path)
+        if img_type not in ("jpeg", "png"):
+            await update.message.reply_text(
+                "❌ Не удалось распознать растение. Попробуйте другое фото.",
+                parse_mode="HTML",
+            )
+            logger.info(
+                f"[BLOCK 1] Reject format {img_type} from user {user_id} at {datetime.utcnow().isoformat()} reason=format")
+            return
+
+        # BLOCK 2: daily usage limit
+        if not await check_and_increment_limit(user_id):
+            await update.message.reply_text(
+                "🚫 Лимит на сегодня исчерпан. Попробуйте завтра.",
+                parse_mode="HTML",
+            )
+            return
+
+        await update.message.reply_text(
+            "Распознаю растение…",
+            parse_mode="HTML",
+        )
 
         with open(temp_path, "rb") as image_file:
             image_bytes = image_file.read()
@@ -63,25 +179,209 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
 
         result = response.json()
+        # BLOCK 1: probability check from Plant.id
+        is_plant_prob = result.get("is_plant_probability", 0)
+
         suggestions = result.get("suggestions", [])
         if not suggestions:
-            await update.message.reply_text("Не удалось распознать растение.")
+            await update.message.reply_text(
+                "❌ Не удалось распознать растение. Попробуйте другое фото.",
+                parse_mode="HTML",
+            )
+            logger.info(
+                f"[BLOCK 1] No suggestions for user {user_id} at {datetime.utcnow().isoformat()} prob={is_plant_prob} reason=no_suggestions")
             return
 
         top = suggestions[0]
         name = top.get("plant_name", "неизвестно")
         prob = round(top.get("probability", 0) * 100, 2)
-        await update.message.reply_text(f"🌱 Похоже, это: {name} ({prob}%)")
+
+        # BLOCK 1.2: фильтрация мусора
+        if is_plant_prob >= 0.2:
+            # BLOCK 5: кнопка ухода
+            keyboard = InlineKeyboardMarkup(
+                [[InlineKeyboardButton("🧠 Уход от BOTanika", callback_data=f"care:{name}")]]
+            )
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text=f"🌱 Похоже, это: {name} ({prob}%)",
+                reply_markup=keyboard,
+                parse_mode="HTML",
+            )
+        else:
+            logger.info(
+                f"[BLOCK 1.2] Low probability {is_plant_prob} for user {user_id}"
+            )
+            await context.bot.send_message(
+                chat_id=update.effective_chat.id,
+                text="❌ Не удалось распознать растение. Попробуйте другое фото.",
+                parse_mode="HTML",
+            )
 
     except Exception as e:
         logger.error(f"[handle_photo] Ошибка: {e}\n{traceback.format_exc()}")
-        await update.message.reply_text("Ошибка при распознавании растения.")
+        await update.message.reply_text(
+            "Ошибка при распознавании растения.",
+            parse_mode="HTML",
+        )
+
+# BLOCK 5: обработка карточки ухода через PostgreSQL и GPT-4
+async def get_care_card_html(latin_name: str) -> str | None:
+    import json
+
+    try:
+        data = await get_card_by_latin_name(latin_name)
+        if not data:
+            completion = await openai_client.chat.completions.create(
+                model="gpt-3.5-turbo",
+                messages=[
+                    {
+                        "role": "user",
+                        "content": f"""
+Сгенерируй JSON-объект с данными по уходу за растением по латинскому названию: {latin_name}
+
+🔒 Правила:
+– ТОЛЬКО JSON. Без пояснений, комментариев, заголовков
+– Никаких лишних полей. Строго 10 ключей
+– Без Markdown, HTML, спецсимволов и эмодзи
+– Не добавляй поле "image", "description", "notes" и др.
+– Максимум 300 символов на каждое поле
+– Все поля — строки. Без вложенности
+
+🧠 Требуется:
+– Учитывай сорт (если указан). Не пиши общие данные по виду
+– Если данных по сорту мало — напиши только проверенные
+– Не придумывай и не заполняй, если нет уверенности
+
+📦 Структура:
+{{
+  "name": "...",
+  "category_type": "...",
+  "short_description": "...",
+  "light": "...",
+  "watering": "...",
+  "temperature": "...",
+  "soil": "...",
+  "fertilizer": "...",
+  "care_tip": "...",
+  "insights": "..."
+}}
+
+✂️ Поля:
+– name: Название растения и сорта (RU)
+– category_type: Назначение (Комнатное, Садовое и т.п.) + семейство
+– short_description: Внешний вид (1–2 предложения)
+– light: Свет и расположение (юг, рассеянный и т.д.)
+– watering: Полив (объём, частота, просушка)
+– temperature: Оптимальные значения и пределы
+– soil: Грунт, дренаж, пересадка
+– fertilizer: Удобрения, периоды, названия
+– care_tip: 1–2 совета (прищипка, опрыскивание и др.)
+– insights: Происхождение, лайфхаки, условия среды
+""",
+                    }
+                ],
+            )
+
+            gpt_content = completion.choices[0].message.content if completion.choices else ""
+            if not gpt_content or not gpt_content.strip():
+                logger.error(f"[get_care_card_html] Empty GPT response: {completion}")
+                error = {"error": "Invalid GPT response"}
+                if DEBUG_GPT:
+                    error["raw"] = str(completion)[:200]
+                return error
+
+            gpt_content_stripped = gpt_content.strip()
+            if not (
+                gpt_content_stripped.startswith("{") and gpt_content_stripped.endswith("}")
+            ):
+                logger.error(
+                    f"[get_care_card_html] Non-JSON GPT response: {gpt_content_stripped}"
+                )
+                error = {"error": "Invalid GPT response"}
+                if DEBUG_GPT:
+                    error["raw"] = gpt_content_stripped[:200]
+                return error
+
+            try:
+                data = json.loads(gpt_content_stripped)
+                if isinstance(data.get("category_type"), dict):
+                    data["category_type"] = ", ".join(str(v) for v in data["category_type"].values())
+            except json.JSONDecodeError as e:
+                logger.error(
+                    f"[get_care_card_html] JSON decode error: {e}. Content: {gpt_content_stripped}"
+                )
+                error = {"error": "Invalid GPT response"}
+                if DEBUG_GPT:
+                    error["raw"] = gpt_content_stripped[:200]
+                return error
+
+            # ✂️ Пресейв-фильтрация: обрезка до 300 символов
+            for key in data:
+                if isinstance(data[key], str) and len(data[key]) > 300:
+                    data[key] = data[key][:297].rstrip() + "..."
+
+            data["latin_name"] = latin_name
+
+            if DEBUG_GPT:
+                logger.info(f"[GPT_RAW] {json.dumps(data, ensure_ascii=False)}")
+
+            await save_card(data)
+
+        data = clean_description(data)
+
+        html = (
+            f"<b>{data['name']}</b>\n\n"
+            f"{data['short_description']}\n\n"
+            f"📂 {data['category_type']}\n\n"
+            f"💡 <b>Уход:</b>\n"
+            f"☀️ Свет: {data['light']}\n"
+            f"💧 Полив: {data['watering']}\n"
+            f"🌡️ Температура: {data['temperature']}\n"
+            f"🪴 Почва: {data['soil']}\n"
+            f"🧪 Удобрения: {data['fertilizer']}\n"
+            f"✂️ Советы: {data['care_tip']}\n\n"
+            f"{data['insights']}"
+        )
+        return html
+
+    except Exception as e:
+        logger.error(f"[get_care_card_html] Ошибка: {e}\n{traceback.format_exc()}")
+        return str(e)
+
+
+
+async def handle_care_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle care button callbacks."""
+    query = update.callback_query
+    await query.answer()
+    latin_name = query.data.split(":", 1)[1]
+    result = await get_care_card_html(latin_name)
+    if result is None:
+        await query.message.reply_text(
+            "❌ Ошибка при получении карточки ухода.",
+            parse_mode="HTML",
+        )
+    elif isinstance(result, dict):
+        msg = "❌ Ошибка при получении карточки ухода."
+        if DEBUG_GPT and result.get("raw"):
+            msg += f"\n\nRAW:\n{result['raw']}"
+        await query.message.reply_text(
+            msg,
+            parse_mode="HTML",
+        )
+    else:
+        await query.message.reply_text(
+            result,
+            parse_mode="HTML",
+        )
 
 # --- Обработка текстовых кнопок
 async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     if text == "ℹ️ О проекте":
-        await update.message.reply_text ("""🌿 О проекте: GreenCore
+        await update.message.reply_text(
+            """🌿 О проекте: GreenCore
 
 Изначально бот создавался как инструмент для системного ухода за растениями: с каталогом, планировщиком и ботами-модераторами.
 Тогда это был BOTanik — проект, объединяющий базу растений, советы и автоматизацию.
@@ -124,11 +424,17 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
 – Подходит и новичкам, и опытным
 
 📢 Канал проекта: https://t.me/BOTanikPlants
-📬 Связь: @veryhappyEpta""")
+📬 Связь: @veryhappyEpta""",
+            parse_mode="HTML",
+        )
     elif text == "📢 Канал":
-        await update.message.reply_text("Наш канал: https://t.me/BOTanikPlants")
+        await update.message.reply_text(
+            "Наш канал: https://t.me/BOTanikPlants",
+            parse_mode="HTML",
+        )
     elif text == "📘 Инфо":
-        await update.message.reply_text("""📘 Как пользоваться ботом GreenCore
+        await update.message.reply_text(
+            """📘 Как пользоваться ботом GreenCore
 
 🧭 Как ориентироваться в ответе:
 
@@ -172,11 +478,14 @@ async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
 🔔 Обновления и новые растения появляются регулярно — подпишитесь на канал, чтобы не пропустить:
 https://t.me/BOTanikPlants
 
-📬 Есть идеи или предложения? Пиши: @veryhappyEpta""")
+📬 Есть идеи или предложения? Пиши: @veryhappyEpta""",
+            parse_mode="HTML",
+        )
 
 # --- Хендлеры
 application.add_handler(CommandHandler("start", start))
 application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
+application.add_handler(CallbackQueryHandler(handle_care_button))
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_buttons))
 
 # --- Инициализация

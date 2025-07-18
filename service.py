@@ -1,6 +1,7 @@
 import os
 import logging
 import aiohttp
+from urllib.parse import urlparse
 
 PLANT_ID_API_KEY = os.getenv("PLANT_ID_API_KEY")
 logger = logging.getLogger(__name__)
@@ -37,3 +38,70 @@ async def identify_plant(image_path: str) -> dict:
     except Exception as e:
         logger.error(f"[identify_plant] Ошибка запроса к Plant.id: {e}")
         return {"error": f"Ошибка Plant.id: {str(e)}"}
+
+# --- PostgreSQL connection pool
+import asyncpg
+
+DATABASE_URL = os.getenv("DATABASE_URL")
+parsed = urlparse(DATABASE_URL) if DATABASE_URL else None
+
+PG_USER = parsed.username if parsed else None
+PG_PASSWORD = parsed.password if parsed else None
+PG_HOST = parsed.hostname if parsed else None
+PG_PORT = parsed.port if parsed else None
+PG_DB = parsed.path[1:] if parsed and parsed.path.startswith('/') else None
+
+_pool = None
+
+async def get_pool():
+    """Return a cached asyncpg connection pool."""
+    global _pool
+    if _pool is None:
+        _pool = await asyncpg.create_pool(
+            host=PG_HOST,
+            port=PG_PORT,
+            user=PG_USER,
+            password=PG_PASSWORD,
+            database=PG_DB,
+        )
+    return _pool
+
+
+async def get_card_by_latin_name(latin_name: str) -> dict | None:
+    """Fetch care card by latin name from PostgreSQL."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT * FROM gpt_cards WHERE latin_name=$1",
+            latin_name,
+        )
+        return dict(row) if row else None
+
+
+async def save_card(data: dict):
+    """Insert or update care card in PostgreSQL."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        fields = [
+            "latin_name",
+            "name",
+            "short_description",
+            "category_type",
+            "light",
+            "watering",
+            "temperature",
+            "soil",
+            "fertilizer",
+            "care_tip",
+            "insights",
+        ]
+        values = [data.get(f) for f in fields]
+        placeholders = ", ".join(f"${i}" for i in range(1, len(fields) + 1))
+        update_set = ", ".join(f"{f}=EXCLUDED.{f}" for f in fields[1:])
+        query = (
+            f"INSERT INTO gpt_cards ({', '.join(fields)}) "
+            f"VALUES ({placeholders}) "
+            f"ON CONFLICT(latin_name) DO UPDATE SET {update_set}"
+        )
+        await conn.execute(query, *values)
+
