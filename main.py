@@ -235,10 +235,7 @@ async def get_care_card_html(latin_name: str) -> str | None:
         data = await get_card_by_latin_name(latin_name)
 
         if not data:
-            prompt = {
-                "role": "user",
-                "content": f"""
-Ты — ботаник-эксперт.
+            prompt_text = f"""Ты — ботаник-эксперт.
 
 По названию растения {latin_name} сгенерируй лаконичную, структурированную карточку ухода.
 
@@ -260,11 +257,10 @@ async def get_care_card_html(latin_name: str) -> str | None:
 – Если данных нет — строку пропусти  
 – Никаких описаний внешнего вида, семейства и т.п.
 """
-            }
 
             completion = await openai_client.chat.completions.create(
                 model="gpt-4-turbo",
-                messages=[prompt],
+                messages=[{"role": "user", "content": prompt_text}],
             )
 
             gpt_raw = completion.choices[0].message.content.strip()
@@ -280,50 +276,6 @@ async def get_care_card_html(latin_name: str) -> str | None:
     except Exception as e:
         logger.error(f"[get_care_card_html] Unexpected error: {e}")
         return f"<b>Ошибка обработки карточки:</b>\n\n<pre>{html.escape(str(e))}</pre>"
-
-            }
-
-            completion = await openai_client.chat.completions.create(
-                model="gpt-4-turbo",
-                messages=[prompt],
-            )
-
-            gpt_raw = completion.choices[0].message.content.strip()
-            gpt_clean = gpt_raw.strip('`json ').strip()
-
-            try:
-                data = json.loads(gpt_clean)
-                if isinstance(data.get("category_type"), dict):
-                    data["category_type"] = ", ".join(
-                        str(v) for v in data["category_type"].values()
-                    )
-                data["latin_name"] = latin_name
-                await save_card(data)
-            except Exception as e:
-                logger.error(f"[get_care_card_html] JSON decode error: {e}\nGPT raw: {gpt_raw}")
-                return f"<b>Ошибка разбора ответа GPT</b>\n\n<pre>{html.escape(gpt_raw[:1500])}</pre>"
-
-        data = clean_description(data)
-
-        html_result = (
-            f"<b>{html.escape(data['name'])}</b>\n\n"
-            f"{html.escape(data['short_description'])}\n\n"
-            f"📂 {html.escape(data['category_type'])}\n\n"
-            f"💡 <b>Уход:</b>\n"
-            f"☀️ Свет: {html.escape(data['light'])}\n"
-            f"💧 Полив: {html.escape(data['watering'])}\n"
-            f"🌡️ Температура: {html.escape(data['temperature'])}\n"
-            f"🪴 Почва: {html.escape(data['soil'])}\n"
-            f"🧪 Удобрения: {html.escape(data['fertilizer'])}\n"
-            f"✂️ Советы: {html.escape(data['care_tip'])}\n\n"
-            f"{html.escape(data['insights'])}"
-        )
-        return html_result
-
-    except Exception as e:
-        logger.error(f"[get_care_card_html] Unexpected error: {e}")
-        return f"<b>Ошибка обработки карточки:</b>\n\n<pre>{html.escape(str(e))}</pre>"
-
 
 async def handle_care_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle care button callbacks."""
