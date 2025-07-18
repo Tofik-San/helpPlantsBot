@@ -227,14 +227,14 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # BLOCK 5: обработка карточки ухода через PostgreSQL и GPT-4
 async def get_care_card_html(latin_name: str) -> str | None:
-    """Return care card HTML, fetching from GPT-4 if missing."""
+    """Return care card HTML, fetching from gpt-3.5-turbo if missing."""
     import json
 
     try:
         data = await get_card_by_latin_name(latin_name)
         if not data:
             completion = await openai_client.chat.completions.create(
-                model="gpt-3-turbo",
+                model="gpt-3.5-turbo",
                 messages=[
                     {
                         "role": "user",
