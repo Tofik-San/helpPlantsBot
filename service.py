@@ -72,7 +72,7 @@ async def get_card_by_latin_name(latin_name: str) -> dict | None:
     pool = await get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
-            "SELECT * FROM gpt_cards WHERE latin_name=$1",
+            "SELECT latin_name, text FROM gpt_cards WHERE latin_name=$1",
             latin_name,
         )
         return dict(row) if row else None
@@ -82,26 +82,10 @@ async def save_card(data: dict):
     """Insert or update care card in PostgreSQL."""
     pool = await get_pool()
     async with pool.acquire() as conn:
-        fields = [
-            "latin_name",
-            "name",
-            "short_description",
-            "category_type",
-            "light",
-            "watering",
-            "temperature",
-            "soil",
-            "fertilizer",
-            "care_tip",
-            "insights",
-        ]
-        values = [data.get(f) for f in fields]
-        placeholders = ", ".join(f"${i}" for i in range(1, len(fields) + 1))
-        update_set = ", ".join(f"{f}=EXCLUDED.{f}" for f in fields[1:])
-        query = (
-            f"INSERT INTO gpt_cards ({', '.join(fields)}) "
-            f"VALUES ({placeholders}) "
-            f"ON CONFLICT(latin_name) DO UPDATE SET {update_set}"
-        )
-        await conn.execute(query, *values)
-
+        query = """
+        INSERT INTO gpt_cards (latin_name, text)
+        VALUES ($1, $2)
+        ON CONFLICT (latin_name) DO UPDATE
+        SET text = EXCLUDED.text
+        """
+        await conn.execute(query, data.get("latin_name"), data.get("text"))
