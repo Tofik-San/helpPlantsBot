@@ -234,7 +234,7 @@ async def get_care_card_html(latin_name: str) -> str | None:
         data = await get_card_by_latin_name(latin_name)
         if not data:
             completion = await openai_client.chat.completions.create(
-                model="gpt-4",
+                model="gpt-3-turbo",
                 messages=[
                     {
                         "role": "user",
