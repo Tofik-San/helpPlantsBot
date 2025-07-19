@@ -95,15 +95,13 @@ async def save_card(data: dict):
 
 
 # --- SerpAPI integration
-def get_snippets_from_serpapi(latin_name: str) -> list[str]:
-    query = f"{latin_name} site:wikipedia.org"
-
+def get_snippets_from_serpapi(query: str) -> list[str]:
     params = {
         "q": query,
         "engine": "google",
-        "hl": "en",
-        "gl": "us",
-        "num": 5,
+        "hl": "ru",
+        "gl": "ru",
+        "num": 10,
         "api_key": os.getenv("SERPAPI_KEY"),
     }
 
@@ -120,4 +118,50 @@ def get_snippets_from_serpapi(latin_name: str) -> list[str]:
         return []
 
 
+# --- Расширение под смешанные сниппеты
 
+RU_PLANT_SOURCES = [
+    "stroy-podskazka.ru",
+    "floristics.info",
+    "wiki-dacha.ru",
+    "rastenia.info",
+    "dzengarden.ru",
+    "shop.pitomnik-sochi.ru"
+]
+
+def build_ru_query(ru_name: str) -> str:
+    base = f"{ru_name} уход"
+    sites = " OR ".join(f"site:{s}" for s in RU_PLANT_SOURCES)
+    return f"{base} {sites}"
+
+def build_en_query(latin_name: str) -> str:
+    return f"{latin_name} site:en.wikipedia.org OR site:wikipedia.org"
+
+def filter_snippets(snippets: list[str]) -> list[str]:
+    keywords = ["light", "sun", "shade", "soil", "water", "prune", "maintenance", "fertilizer", "temperature", "care", "уход", "полив", "пересадка"]
+    return [s for s in snippets if any(k in s.lower() for k in keywords)]
+
+async def get_combined_snippets(latin_name: str, ru_name: str) -> list[str]:
+    q_ru = build_ru_query(ru_name)
+    q_en = build_en_query(latin_name)
+
+    snippets_ru = get_snippets_from_serpapi(q_ru)
+    snippets_en = get_snippets_from_serpapi(q_en)
+
+    clean_ru = filter_snippets(snippets_ru)
+    clean_en = filter_snippets(snippets_en)
+
+    return clean_ru + clean_en
+
+PLANT_NAME_MAP = {
+    "Euonymus alatus": "Бересклет крылатый",
+    "Ficus elastica": "Фикус эластика",
+    "Sansevieria trifasciata": "Сансевиерия трёхполосная",
+    "Zamioculcas zamiifolia": "Замиокулькас",
+    "Hibiscus rosa-sinensis": "Гибискус китайский",
+    "Aloe vera": "Алоэ вера",
+    # дополняй
+}
+
+def map_latin_to_russian(latin_name: str) -> str:
+    return PLANT_NAME_MAP.get(latin_name, latin_name)
