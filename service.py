@@ -96,7 +96,7 @@ async def save_card(data: dict):
 
 # --- SerpAPI integration
 def get_snippets_from_serpapi(latin_name: str) -> list[str]:
-    query = f"{latin_name} уход полив особенности лайфхаки наблюдения"
+    query = f"{latin_name}"
 
     params = {
         "q": f"{query} site:ru.wikipedia.org",
