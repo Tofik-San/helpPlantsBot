@@ -282,6 +282,7 @@ async def get_care_card_html(latin_name: str) -> str | None:
             )
 
             gpt_raw = completion.choices[0].message.content.strip()
+            gpt_raw = gpt_raw.replace("**", "").replace("__", "")
             await save_card({
                 "latin_name": latin_name,
                 "text": gpt_raw
