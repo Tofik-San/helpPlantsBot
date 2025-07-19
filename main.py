@@ -236,6 +236,7 @@ async def get_care_card_html(latin_name: str) -> str | None:
 
         from service import get_snippets_from_serpapi
         snippets = get_snippets_from_serpapi(latin_name)
+        russian_name = latin_name
 
 
         if not snippets:
