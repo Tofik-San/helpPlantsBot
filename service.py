@@ -96,9 +96,11 @@ async def save_card(data: dict):
 
 # --- SerpAPI integration
 def get_snippets_from_serpapi(latin_name: str) -> list[str]:
+    query = f"{latin_name} уход полив особенности лайфхаки наблюдения"
+
     params = {
         "engine": "google",
-        query = f"{latin_name} уход полив особенности лайфхаки наблюдения"
+        "q": query,
         "hl": "ru",
         "num": 7,
         "api_key": SERPAPI_KEY
@@ -107,15 +109,13 @@ def get_snippets_from_serpapi(latin_name: str) -> list[str]:
     try:
         response = requests.get("https://serpapi.com/search", params=params)
         data = response.json()
-
-        snippets = []
-        for result in data.get("organic_results", []):
-            snippet = result.get("snippet")
-            if snippet:
-                snippets.append(snippet)
-
-        return snippets
+        return [
+            result["snippet"]
+            for result in data.get("organic_results", [])
+            if "snippet" in result
+        ]
     except Exception as e:
         logger.error(f"[SerpAPI] Ошибка: {e}")
         return []
+
 
