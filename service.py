@@ -1,60 +1,132 @@
-import logging
-import httpx
 import os
-import openai
+import logging
+import aiohttp
+import requests
+from urllib.parse import urlparse
+from openai import AsyncOpenAI
 
+PLANT_ID_API_KEY = os.getenv("PLANT_ID_API_KEY")
 SERPAPI_KEY = os.getenv("SERPAPI_KEY")
-openai.api_key = os.getenv("OPENAI_API_KEY")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
+
+logger = logging.getLogger(__name__)
+
+HEADERS = {
+    "Content-Type": "application/json",
+    "Api-Key": PLANT_ID_API_KEY
+}
 
 
-async def get_snippets_from_serpapi(latin_name: str, max_snippets: int = 10) -> list[str]:
-    logging.info(f"[SerpAPI] Поиск по: {latin_name}")
+async def identify_plant(image_path: str) -> dict:
+    try:
+        with open(image_path, "rb") as image_file:
+            image_data = image_file.read()
+    except Exception as e:
+        logger.error(f"[identify_plant] Ошибка при чтении файла {image_path}: {e}")
+        return {"error": f"Ошибка при чтении файла: {str(e)}"}
 
-    query = (
-        f"{latin_name} "
-        "уход OR содержание OR особенности OR советы OR лайфхаки "
-        "site:.ru"
-    )
-
-    url = "https://serpapi.com/search"
-    params = {
-        "engine": "google",
-        "q": query,
-        "api_key": SERPAPI_KEY,
-        "hl": "ru",
-        "num": 20,
+    url = "https://api.plant.id/v2/identify"
+    payload = {
+        "images": [image_data.decode("latin1")],
+        "modifiers": ["similar_images"],
+        "plant_language": "ru",
+        "plant_details": ["common_names", "url", "name_authority", "wiki_description", "taxonomy"]
     }
 
     try:
-        async with httpx.AsyncClient() as client:
-            response = await client.get(url, params=params, timeout=15)
-            response.raise_for_status()
-            data = response.json()
-
-        results = data.get("organic_results", [])
-        snippets = [
-            item["snippet"].strip()
-            for item in results
-            if "snippet" in item
-        ][:max_snippets]
-
-        logging.info(f"[SerpAPI] Найдено сниппетов: {len(snippets)}")
-        return snippets
-
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, headers=HEADERS, json=payload) as resp:
+                if resp.status != 200:
+                    logger.error(f"[identify_plant] API ответ {resp.status}: {await resp.text()}")
+                    return {"error": f"Plant.id API ответ {resp.status}"}
+                return await resp.json()
     except Exception as e:
-        logging.error(f"[SerpAPI] Ошибка: {e}")
+        logger.error(f"[identify_plant] Ошибка запроса к Plant.id: {e}")
+        return {"error": f"Ошибка Plant.id: {str(e)}"}
+
+
+# --- PostgreSQL connection pool
+import asyncpg
+
+DATABASE_URL = os.getenv("DATABASE_URL")
+parsed = urlparse(DATABASE_URL) if DATABASE_URL else None
+
+PG_USER = parsed.username if parsed else None
+PG_PASSWORD = parsed.password if parsed else None
+PG_HOST = parsed.hostname if parsed else None
+PG_PORT = parsed.port if parsed else None
+PG_DB = parsed.path[1:] if parsed and parsed.path.startswith('/') else None
+
+_pool = None
+
+async def get_pool():
+    global _pool
+    if _pool is None:
+        _pool = await asyncpg.create_pool(
+            host=PG_HOST,
+            port=PG_PORT,
+            user=PG_USER,
+            password=PG_PASSWORD,
+            database=PG_DB,
+        )
+    return _pool
+
+
+async def get_card_by_latin_name(latin_name: str) -> dict | None:
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT latin_name, text FROM gpt_cards WHERE latin_name=$1",
+            latin_name,
+        )
+        return dict(row) if row else None
+
+
+async def save_card(data: dict):
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        query = """
+        INSERT INTO gpt_cards (latin_name, text)
+        VALUES ($1, $2)
+        ON CONFLICT (latin_name) DO UPDATE
+        SET text = EXCLUDED.text
+        """
+        await conn.execute(query, data.get("latin_name"), data.get("text"))
+
+
+# --- SerpAPI integration
+def get_snippets_from_serpapi(latin_name: str) -> list[str]:
+    params = {
+        "engine": "google",
+        "q": f"{latin_name} уход site:.ru",
+        "hl": "ru",
+        "num": 5,
+        "api_key": SERPAPI_KEY
+    }
+    try:
+        response = requests.get("https://serpapi.com/search", params=params)
+        data = response.json()
+
+        snippets = []
+        for result in data.get("organic_results", []):
+            snippet = result.get("snippet")
+            if snippet:
+                snippets.append(snippet)
+
+        return snippets
+    except Exception as e:
+        logger.error(f"[SerpAPI] Ошибка: {e}")
         return []
 
 
+# --- GPT card generation
 async def generate_card_with_gpt(latin_name: str, snippets: list[str]) -> str:
-    logging.info(f"[GPT] Генерация карточки для: {latin_name}")
-    source_text = "\n".join(snippets).strip()
-
     prompt = f"""Ты — ботаник-эксперт.
 
 Вот выдержки из русских сайтов по запросу "{latin_name}":
 
-{source_text}
+{'\n'.join(snippets)}
 
 На основе этих данных сгенерируй лаконичную, структурированную карточку ухода.
 
@@ -71,7 +143,7 @@ async def generate_card_with_gpt(latin_name: str, snippets: list[str]) -> str:
 – Все пункты — коротко, чётко, без лишнего текста.
 – Язык — только русский.
 – Стиль — технически точный, без оценок и описательной лирики.
-– Формат подходит для Telegram (без markdown, emoji и HTML).
+– Формат подходит для отображения в Telegram (без markdown, emoji и HTML).
 – Если данных по какому-либо пункту нет — просто пропусти его.
 
 📌 Названия:
@@ -80,12 +152,6 @@ async def generate_card_with_gpt(latin_name: str, snippets: list[str]) -> str:
 – Если нет — оставь только латинское.
 – Не транслитерируй, не переводи дословно, не сочиняй.
 
-Примеры:
-• Ficus elastica → Резиновое дерево (Ficus elastica)
-• Euonymus alatus → Бересклет крылатый (Euonymus alatus)
-• Ficus benjamina → Фикус Бенджамина (Ficus benjamina)
-• Thaumatophyllum xanadu → Thaumatophyllum xanadu
-
 🚫 Запрещено:
 – Придумывать народные или обиходные названия.
 – Использовать метафоры, сравнения или знаковые вариации растений.
@@ -93,12 +159,11 @@ async def generate_card_with_gpt(latin_name: str, snippets: list[str]) -> str:
 – Используй только проверенные официальные русские имена, если они есть."""
 
     try:
-        response = await openai.ChatCompletion.acreate(
-            model="gpt-3.5-turbo",
-            messages=[{"role": "user", "content": prompt}],
+        response = await openai_client.chat.completions.create(
+            model="gpt-4o",
+            messages=[{"role": "user", "content": prompt}]
         )
         return response.choices[0].message.content.strip()
-
     except Exception as e:
-        logging.error(f"[GPT] Ошибка генерации карточки: {e}")
-        return "Не удалось сформировать карточку ухода."
+        logger.error(f"[generate_card_with_gpt] Ошибка: {e}")
+        return "❌ Ошибка генерации карточки через GPT."
