@@ -235,7 +235,8 @@ async def get_care_card_html(latin_name: str) -> str | None:
         data = await get_card_by_latin_name(latin_name)
 
         from service import get_snippets_from_serpapi
-        snippets = await get_snippets_from_serpapi(latin_name)
+        snippets = get_snippets_from_serpapi(latin_name)
+
 
         if not snippets:
             return "<b>Не удалось найти информацию по растению.</b>"
