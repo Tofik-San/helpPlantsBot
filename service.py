@@ -98,7 +98,7 @@ async def save_card(data: dict):
 def get_snippets_from_serpapi(latin_name: str) -> list[str]:
     params = {
         "engine": "google",
-        "q": f"{latin_name} уход, полив, особенности, лайфхаки и наблюдения от специалистов site:.ru",
+        query = f"{latin_name} уход полив особенности лайфхаки наблюдения"
         "hl": "ru",
         "num": 7,
         "api_key": SERPAPI_KEY
