@@ -273,8 +273,10 @@ async def get_care_card_html(latin_name: str) -> str | None:
 
 
             completion = await openai_client.chat.completions.create(
-                model="gpt-3.5-turbo",
+                model="gpt-4-turbo",
                 messages=[{"role": "user", "content": prompt_text}],
+                max_tokens=1500,
+                temperature=0.3
             )
 
             gpt_raw = completion.choices[0].message.content.strip()
