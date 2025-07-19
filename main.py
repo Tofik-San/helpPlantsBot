@@ -235,15 +235,15 @@ async def get_care_card_html(latin_name: str) -> str | None:
 
     try:
     
-    data = await get_card_by_latin_name(latin_name)
-    snippets = await get_snippets_from_serpapi(latin_name)
+       data = await get_card_by_latin_name(latin_name)
+    	 snippets = await get_snippets_from_serpapi(latin_name)
 
-    if not snippets:
+       if not snippets:
         return "<b>Не удалось найти информацию по растению.</b>"
 
-    source_text = "\n".join(snippets).strip()
+      source_text = "\n".join(snippets).strip()
 
-    if not data:
+      if not data:
         # Генерация промпта...
         prompt_text = f"""Ты — ботаник-эксперт.
 
