@@ -96,13 +96,13 @@ async def save_card(data: dict):
 
 # --- SerpAPI integration
 def get_snippets_from_serpapi(latin_name: str) -> list[str]:
-    query = f"{latin_name}"
+    query = f"{latin_name} site:wikipedia.org"
 
     params = {
-        "q": f"{query} site:ru.wikipedia.org",
+        "q": query,
         "engine": "google",
-        "hl": "ru",
-        "gl": "ru",
+        "hl": "en",
+        "gl": "us",
         "num": 5,
         "api_key": os.getenv("SERPAPI_KEY"),
     }
@@ -118,5 +118,6 @@ def get_snippets_from_serpapi(latin_name: str) -> list[str]:
     except Exception as e:
         logger.error(f"[SerpAPI] Ошибка: {e}")
         return []
+
 
 
