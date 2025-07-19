@@ -234,10 +234,24 @@ async def get_care_card_html(latin_name: str) -> str | None:
     try:
         data = await get_card_by_latin_name(latin_name)
 
+        from service import get_snippets_from_serpapi
+        snippets = await get_snippets_from_serpapi(latin_name)
+
+        if not snippets:
+            return "<b>Не удалось найти информацию по растению.</b>"
+
+        source_text = "\n".join(snippets)
+
         if not data:
             prompt_text = f"""Ты — ботаник-эксперт.
 
-По названию растения {latin_name} сгенерируй лаконичную, структурированную карточку ухода.
+Вот выдержки из русских сайтов по запросу "{latin_name}":
+
+{source_text}
+
+На основе этих данных сгенерируй лаконичную, структурированную карточку ухода.
+"""
+
 
 Вывод строго по формату:
 
