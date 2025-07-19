@@ -99,11 +99,12 @@ def get_snippets_from_serpapi(latin_name: str) -> list[str]:
     query = f"{latin_name} уход полив особенности лайфхаки наблюдения"
 
     params = {
+        "q": f"{query} site:ru.wikipedia.org",
         "engine": "google",
-        "q": query,
         "hl": "ru",
-        "num": 7,
-        "api_key": SERPAPI_KEY
+        "gl": "ru",
+        "num": 5,
+        "api_key": os.getenv("SERPAPI_KEY"),
     }
 
     try:
