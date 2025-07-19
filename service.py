@@ -3,13 +3,9 @@ import logging
 import aiohttp
 import requests
 from urllib.parse import urlparse
-from openai import AsyncOpenAI
 
 PLANT_ID_API_KEY = os.getenv("PLANT_ID_API_KEY")
 SERPAPI_KEY = os.getenv("SERPAPI_KEY")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
-
 logger = logging.getLogger(__name__)
 
 HEADERS = {
@@ -61,6 +57,7 @@ PG_DB = parsed.path[1:] if parsed and parsed.path.startswith('/') else None
 _pool = None
 
 async def get_pool():
+    """Return a cached asyncpg connection pool."""
     global _pool
     if _pool is None:
         _pool = await asyncpg.create_pool(
@@ -74,6 +71,7 @@ async def get_pool():
 
 
 async def get_card_by_latin_name(latin_name: str) -> dict | None:
+    """Fetch care card by latin name from PostgreSQL."""
     pool = await get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
@@ -84,6 +82,7 @@ async def get_card_by_latin_name(latin_name: str) -> dict | None:
 
 
 async def save_card(data: dict):
+    """Insert or update care card in PostgreSQL."""
     pool = await get_pool()
     async with pool.acquire() as conn:
         query = """
@@ -97,6 +96,7 @@ async def save_card(data: dict):
 
 # --- SerpAPI integration
 def get_snippets_from_serpapi(latin_name: str) -> list[str]:
+    """Fetch care-related snippets from Google using SerpAPI."""
     params = {
         "engine": "google",
         "q": f"{latin_name} уход site:.ru",
@@ -116,54 +116,5 @@ def get_snippets_from_serpapi(latin_name: str) -> list[str]:
 
         return snippets
     except Exception as e:
-        logger.error(f"[SerpAPI] Ошибка: {e}")
+        print(f"[SerpAPI] Ошибка: {e}")
         return []
-
-
-# --- GPT card generation
-async def generate_card_with_gpt(latin_name: str, snippets: list[str]) -> str:
-    prompt = f"""Ты — ботаник-эксперт.
-
-Вот выдержки из русских сайтов по запросу "{latin_name}":
-
-{'\n'.join(snippets)}
-
-На основе этих данных сгенерируй лаконичную, структурированную карточку ухода.
-
-Вывод строго по формату:
-Название: [официальное русское, если есть] ({latin_name})
-Свет: ...
-Полив: ...
-Температура: ...
-Почва: ...
-Удобрения: ...
-Советы: ...
-
-🔒 Правила:
-– Все пункты — коротко, чётко, без лишнего текста.
-– Язык — только русский.
-– Стиль — технически точный, без оценок и описательной лирики.
-– Формат подходит для отображения в Telegram (без markdown, emoji и HTML).
-– Если данных по какому-либо пункту нет — просто пропусти его.
-
-📌 Названия:
-Интерпретируй латинское название по ботаническому словарю.
-– Если есть официальное русское имя — используй его.
-– Если нет — оставь только латинское.
-– Не транслитерируй, не переводи дословно, не сочиняй.
-
-🚫 Запрещено:
-– Придумывать народные или обиходные названия.
-– Использовать метафоры, сравнения или знаковые вариации растений.
-– Например: не пиши Codiaeum с рыбкой. Убери это.
-– Используй только проверенные официальные русские имена, если они есть."""
-
-    try:
-        response = await openai_client.chat.completions.create(
-            model="gpt-4o",
-            messages=[{"role": "user", "content": prompt}]
-        )
-        return response.choices[0].message.content.strip()
-    except Exception as e:
-        logger.error(f"[generate_card_with_gpt] Ошибка: {e}")
-        return "❌ Ошибка генерации карточки через GPT."

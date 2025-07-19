@@ -19,13 +19,7 @@ from telegram.ext import (
 from openai import AsyncOpenAI
 import httpx
 from limit_checker import check_and_increment_limit
-from service import (
-    get_card_by_latin_name,
-    save_card,
-    get_snippets_from_serpapi,
-    generate_card_with_gpt
-)
-
+from service import get_card_by_latin_name, save_card
 
 # --- Конфиги
 TOKEN = os.getenv("BOT_TOKEN")
@@ -233,30 +227,86 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # BLOCK 5: обработка карточки ухода через PostgreSQL и GPT-4
 async def get_care_card_html(latin_name: str) -> str | None:
+    """Return simplified care card from GPT."""
     import html
     from loguru import logger
 
     try:
         data = await get_card_by_latin_name(latin_name)
 
-        if data:
-            gpt_raw = data.get("text", "")
-        else:
-            snippets = await get_snippets_from_serpapi(latin_name)
-            if not snippets:
-                return "<b>Не удалось найти информацию по растению.</b>"
+        from service import get_snippets_from_serpapi
+        snippets = get_snippets_from_serpapi(latin_name)
 
-            gpt_raw = await generate_card_with_gpt(latin_name, snippets)
+
+        if not snippets:
+            return "<b>Не удалось найти информацию по растению.</b>"
+
+        source_text = "\n".join(snippets)
+
+        if not data:
+            prompt_text = f"""Ты — ботаник-эксперт.
+
+Вот выдержки из русских сайтов по запросу "{latin_name}":
+
+{source_text}
+
+На основе этих данных сгенерируй лаконичную, структурированную карточку ухода.
+
+Вывод строго по формату:
+Название: [официальное русское, если есть] ({latin_name})
+Свет: ...
+Полив: ...
+Температура: ...
+Почва: ...
+Удобрения: ...
+Советы: ...
+
+🔒 Правила:
+– Все пункты — коротко, чётко, без лишнего текста.
+– Язык — только русский.
+– Стиль — технически точный, без оценок и описательной лирики.
+– Формат подходит для отображения в Telegram (без markdown, emoji и HTML).
+– Если данных по какому-либо пункту нет — просто пропусти его.
+
+📌 Названия:
+Интерпретируй латинское название по ботаническому словарю.
+– Если есть официальное русское имя — используй его.
+– Если нет — оставь только латинское.
+– Не транслитерируй, не переводи дословно, не сочиняй.
+
+Примеры:
+• Ficus elastica → Резиновое дерево (Ficus elastica)
+• Euonymus alatus → Бересклет крылатый (Euonymus alatus)
+• Ficus benjamina → Фикус Бенджамина (Ficus benjamina)
+• Thaumatophyllum xanadu → Thaumatophyllum xanadu
+
+🚫 Запрещено:
+– Придумывать народные или обиходные названия.
+– Использовать метафоры, сравнения или знаковые вариации растений.
+– Например: не пиши Codiaeum с рыбкой. Убери это.
+– Используй только проверенные официальные русские имена, если они есть.
+– Если латинское название состоит из двух слов, не расшифровывай видовой эпитет.
+"""
+
+
+            completion = await openai_client.chat.completions.create(
+                model="gpt-4-turbo",
+                messages=[{"role": "user", "content": prompt_text}],
+            )
+
+            gpt_raw = completion.choices[0].message.content.strip()
             await save_card({
                 "latin_name": latin_name,
                 "text": gpt_raw
             })
+        else:
+            gpt_raw = data.get("text", "")
 
         return f"<pre>{html.escape(gpt_raw[:3000])}</pre>"
 
     except Exception as e:
         logger.error(f"[get_care_card_html] Unexpected error: {e}")
-        return f"<b>Ошибка обработки карточки:</b>\n\n<pre>{html.escape(str(e))}</pre>
+        return f"<b>Ошибка обработки карточки:</b>\n\n<pre>{html.escape(str(e))}</pre>"
 
 async def handle_care_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle care button callbacks."""
