@@ -1,9 +1,11 @@
 import os
 import logging
 import aiohttp
+import requests
 from urllib.parse import urlparse
 
 PLANT_ID_API_KEY = os.getenv("PLANT_ID_API_KEY")
+SERPAPI_KEY = os.getenv("SERPAPI_KEY")
 logger = logging.getLogger(__name__)
 
 HEADERS = {
@@ -38,6 +40,7 @@ async def identify_plant(image_path: str) -> dict:
     except Exception as e:
         logger.error(f"[identify_plant] Ошибка запроса к Plant.id: {e}")
         return {"error": f"Ошибка Plant.id: {str(e)}"}
+
 
 # --- PostgreSQL connection pool
 import asyncpg
@@ -89,3 +92,29 @@ async def save_card(data: dict):
         SET text = EXCLUDED.text
         """
         await conn.execute(query, data.get("latin_name"), data.get("text"))
+
+
+# --- SerpAPI integration
+def get_snippets_from_serpapi(latin_name: str) -> list[str]:
+    """Fetch care-related snippets from Google using SerpAPI."""
+    params = {
+        "engine": "google",
+        "q": f"{latin_name} уход site:.ru",
+        "hl": "ru",
+        "num": 5,
+        "api_key": SERPAPI_KEY
+    }
+    try:
+        response = requests.get("https://serpapi.com/search", params=params)
+        data = response.json()
+
+        snippets = []
+        for result in data.get("organic_results", []):
+            snippet = result.get("snippet")
+            if snippet:
+                snippets.append(snippet)
+
+        return snippets
+    except Exception as e:
+        print(f"[SerpAPI] Ошибка: {e}")
+        return []
