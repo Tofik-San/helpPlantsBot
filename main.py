@@ -20,6 +20,8 @@ from openai import AsyncOpenAI
 import httpx
 from limit_checker import check_and_increment_limit
 from service import get_card_by_latin_name, save_card
+from service import get_snippets_from_serpapi
+
 
 # --- Конфиги
 TOKEN = os.getenv("BOT_TOKEN")
@@ -232,19 +234,18 @@ async def get_care_card_html(latin_name: str) -> str | None:
     from loguru import logger
 
     try:
-        data = await get_card_by_latin_name(latin_name)
+    
+    data = await get_card_by_latin_name(latin_name)
+    snippets = await get_snippets_from_serpapi(latin_name)
 
-        from service import get_snippets_from_serpapi
-        snippets = get_snippets_from_serpapi(latin_name)
+    if not snippets:
+        return "<b>Не удалось найти информацию по растению.</b>"
 
+    source_text = "\n".join(snippets).strip()
 
-        if not snippets:
-            return "<b>Не удалось найти информацию по растению.</b>"
-
-        source_text = "\n".join(snippets)
-
-        if not data:
-            prompt_text = f"""Ты — ботаник-эксперт.
+    if not data:
+        # Генерация промпта...
+        prompt_text = f"""Ты — ботаник-эксперт.
 
 Вот выдержки из русских сайтов по запросу "{latin_name}":
 
@@ -285,28 +286,24 @@ async def get_care_card_html(latin_name: str) -> str | None:
 – Использовать метафоры, сравнения или знаковые вариации растений.
 – Например: не пиши Codiaeum с рыбкой. Убери это.
 – Используй только проверенные официальные русские имена, если они есть.
-– Если латинское название состоит из двух слов, не расшифровывай видовой эпитет.
-"""
+– Если латинское название состоит из двух слов, не расшифровывай видовой эпитет."""  # как у тебя
+        completion = await openai_client.chat.completions.create(
+            model="gpt-3.5-turbo",
+            messages=[{"role": "user", "content": prompt_text}],
+        )
+        gpt_raw = completion.choices[0].message.content.strip()
+        await save_card({
+            "latin_name": latin_name,
+            "text": gpt_raw
+        })
+    else:
+        gpt_raw = data.get("text", "")
 
+    return f"<pre>{html.escape(gpt_raw[:3000])}</pre>"
 
-            completion = await openai_client.chat.completions.create(
-                model="gpt-4-turbo",
-                messages=[{"role": "user", "content": prompt_text}],
-            )
-
-            gpt_raw = completion.choices[0].message.content.strip()
-            await save_card({
-                "latin_name": latin_name,
-                "text": gpt_raw
-            })
-        else:
-            gpt_raw = data.get("text", "")
-
-        return f"<pre>{html.escape(gpt_raw[:3000])}</pre>"
-
-    except Exception as e:
-        logger.error(f"[get_care_card_html] Unexpected error: {e}")
-        return f"<b>Ошибка обработки карточки:</b>\n\n<pre>{html.escape(str(e))}</pre>"
+except Exception as e:
+    logger.error(f"[get_care_card_html] Unexpected error: {e}")
+    return f"<b>Ошибка обработки карточки:</b>\n\n<pre>{html.escape(str(e))}</pre>"
 
 async def handle_care_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle care button callbacks."""

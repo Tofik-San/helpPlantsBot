@@ -4,7 +4,9 @@ import aiohttp
 import requests
 from urllib.parse import urlparse
 import httpx
+import openai
 
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 PLANT_ID_API_KEY = os.getenv("PLANT_ID_API_KEY")
 SERPAPI_KEY = os.getenv("SERPAPI_KEY")
 logger = logging.getLogger(__name__)
@@ -32,6 +34,40 @@ async def get_snippets_from_serpapi(latin_name: str, max_snippets: int = 10) -> 
         "hl": "ru",
         "num": 20,
     }
+
+async def generate_card_with_gpt(latin_name: str, snippets: list[str]) -> str:
+    prompt = (
+        f"Ты бот, создающий карточки ухода за растениями.\n"
+        f"Название (латынь): {latin_name}\n\n"
+        f"Собери на основе этих данных карточку ухода:\n"
+        f"{chr(10).join(snippets)}\n\n"
+        f"Формат:\n"
+        f"📘 Название\n"
+        f"💡 Краткое описание\n"
+        f"☀️ Свет\n"
+        f"💧 Полив\n"
+        f"🌡️ Температура\n"
+        f"🪴 Почва\n"
+        f"🧪 Удобрения\n"
+        f"⚠️ Особенности\n"
+        f"📌 Лайфхаки"
+    )
+
+    try:
+        response = await openai.ChatCompletion.acreate(
+            model="gpt-3.5-turbo",
+            api_key=OPENAI_API_KEY,
+            messages=[
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.4,
+            max_tokens=900
+        )
+        return response.choices[0].message.content.strip()
+
+    except Exception as e:
+        logging.error(f"[GPT] Ошибка генерации карточки: {e}")
+        return "Не удалось сформировать карточку ухода."
 
     try:
         async with httpx.AsyncClient() as client:
@@ -106,27 +142,3 @@ async def save_card(data: dict):
         await conn.execute(query, data.get("latin_name"), data.get("text"))
 
 
-# --- SerpAPI integration
-def get_snippets_from_serpapi(latin_name: str) -> list[str]:
-    """Fetch care-related snippets from Google using SerpAPI."""
-    params = {
-        "engine": "google",
-        "q": f"{latin_name} уход site:.ru",
-        "hl": "ru",
-        "num": 5,
-        "api_key": SERPAPI_KEY
-    }
-    try:
-        response = requests.get("https://serpapi.com/search", params=params)
-        data = response.json()
-
-        snippets = []
-        for result in data.get("organic_results", []):
-            snippet = result.get("snippet")
-            if snippet:
-                snippets.append(snippet)
-
-        return snippets
-    except Exception as e:
-        print(f"[SerpAPI] Ошибка: {e}")
-        return []
