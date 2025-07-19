@@ -256,7 +256,7 @@ async def get_care_card_html(latin_name: str) -> str | None:
 
     except Exception as e:
         logger.error(f"[get_care_card_html] Unexpected error: {e}")
-        return f"<b>Ошибка обработки карточки:</b>\n\n<pre>{html.escape(str(e))}</pre>
+        return f"<b>Ошибка обработки карточки:</b>\n\n<pre>{html.escape(str(e))}</pre"
 
 async def handle_care_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle care button callbacks."""
