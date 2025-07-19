@@ -239,7 +239,8 @@ async def get_care_card_html(latin_name: str) -> str | None:
 
 
         if not snippets:
-            return "<b>Не удалось найти информацию по растению.</b>"
+            logger.warning(f"[GPT] Сниппеты не найдены для {latin_name}")
+            return f"❌ Не удалось найти информацию по растению: {latin_name}. Попробуй другое название или уточни запрос."
 
         source_text = "\n".join(snippets)
 
