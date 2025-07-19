@@ -3,6 +3,7 @@ import logging
 import aiohttp
 import requests
 from urllib.parse import urlparse
+import httpx
 
 PLANT_ID_API_KEY = os.getenv("PLANT_ID_API_KEY")
 SERPAPI_KEY = os.getenv("SERPAPI_KEY")
@@ -14,32 +15,43 @@ HEADERS = {
 }
 
 
-async def identify_plant(image_path: str) -> dict:
-    try:
-        with open(image_path, "rb") as image_file:
-            image_data = image_file.read()
-    except Exception as e:
-        logger.error(f"[identify_plant] Ошибка при чтении файла {image_path}: {e}")
-        return {"error": f"Ошибка при чтении файла: {str(e)}"}
+async def get_snippets_from_serpapi(latin_name: str, max_snippets: int = 10) -> list[str]:
+    logging.info(f"[SerpAPI] Поиск по: {latin_name}")
 
-    url = "https://api.plant.id/v2/identify"
-    payload = {
-        "images": [image_data.decode("latin1")],
-        "modifiers": ["similar_images"],
-        "plant_language": "ru",
-        "plant_details": ["common_names", "url", "name_authority", "wiki_description", "taxonomy"]
+    query = (
+        f"{latin_name} "
+        "уход OR содержание OR особенности OR советы OR лайфхаки "
+        "site:.ru"
+    )
+
+    url = "https://serpapi.com/search"
+    params = {
+        "engine": "google",
+        "q": query,
+        "api_key": SERPAPI_KEY,
+        "hl": "ru",
+        "num": 20,
     }
 
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.post(url, headers=HEADERS, json=payload) as resp:
-                if resp.status != 200:
-                    logger.error(f"[identify_plant] API ответ {resp.status}: {await resp.text()}")
-                    return {"error": f"Plant.id API ответ {resp.status}"}
-                return await resp.json()
+        async with httpx.AsyncClient() as client:
+            response = await client.get(url, params=params, timeout=15)
+            response.raise_for_status()
+            data = response.json()
+
+        results = data.get("organic_results", [])
+        snippets = [
+            item["snippet"].strip()
+            for item in results
+            if "snippet" in item
+        ][:max_snippets]
+
+        logging.info(f"[SerpAPI] Найдено сниппетов: {len(snippets)}")
+        return snippets
+
     except Exception as e:
-        logger.error(f"[identify_plant] Ошибка запроса к Plant.id: {e}")
-        return {"error": f"Ошибка Plant.id: {str(e)}"}
+        logging.error(f"[SerpAPI] Ошибка: {e}")
+        return []
 
 
 # --- PostgreSQL connection pool
