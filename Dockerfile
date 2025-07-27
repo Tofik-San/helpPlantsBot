@@ -1,19 +1,19 @@
-FROM python:3.10-slim
-
-ENV PYTHONDONTWRITEBYTECODE=1
-ENV PYTHONUNBUFFERED=1
-ENV NIXPACKS_PATH=/opt/venv/bin:$NIXPACKS_PATH
+FROM python:3.11-slim
 
 WORKDIR /app
 
-# Сначала копируем весь проект
+# Установка зависимостей системы
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    gcc \
+    build-essential \
+    && rm -rf /var/lib/apt/lists/*
+
+# Копируем файлы проекта
 COPY . .
 
-# Кеш pip
-RUN --mount=type=cache,id=s/pip,target=/root/.cache/pip \
-    python -m venv /opt/venv && \
-    . /opt/venv/bin/activate && \
-    pip install --upgrade pip setuptools wheel && \
-    pip install -r requirements.txt
+# Используем кеш pip
+RUN --mount=type=cache,target=/root/.cache/pip,id=pipcache \
+    pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir -r requirements.txt
 
 CMD ["python", "main.py"]
