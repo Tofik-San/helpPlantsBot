@@ -11,3 +11,4 @@ aiohttp
 asyncpg
 loguru
 httpx
+faiss-cpu

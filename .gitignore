@@ -192,3 +192,14 @@ cython_debug/
 #  refer to https://docs.cursor.com/context/ignore-files
 .cursorignore
 .cursorindexingignore
+
+# ───── Специфично под FAISS и генераторы ─────
+faiss_index.bin
+faiss_metadata.pkl
+clean_chunks.jsonl
+latin_name_map.json
+
+# Генераторные скрипты (если не прод)
+build_faiss_index.py
+vectorize_chunks.py
+parser_chunks.py

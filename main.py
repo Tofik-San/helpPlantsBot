@@ -227,74 +227,66 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 # BLOCK 5: обработка карточки ухода через PostgreSQL и GPT-4
 async def get_care_card_html(latin_name: str) -> str | None:
-    """Return simplified care card from GPT."""
+    """RAG: Поиск чанков ухода по FAISS и генерация карточки GPT."""
     import html
     from loguru import logger
+    from faiss_search import get_chunks_by_latin_name
+    from service import get_card_by_latin_name, save_card
 
     try:
+        # 1. Проверка в БД
         data = await get_card_by_latin_name(latin_name)
+        if data:
+            return f"<pre>{html.escape(data.get('text', '')[:3000])}</pre>"
 
-        from service import get_snippets_from_serpapi
-        snippets = get_snippets_from_serpapi(latin_name)
+        # 2. Поиск через FAISS
+        chunks = get_chunks_by_latin_name(latin_name)
+        if not chunks:
+            return f"❌ Не найдено информации по: {latin_name}"
 
+        # 3. Сборка prompt
+        prompt_text = f"""Ты — специалист по уходу за растениями.
+Составь структурированную карточку ухода на основе текста ниже.
 
-        if not snippets:
-            logger.warning(f"[GPT] Сниппеты не найдены для {latin_name}")
-            return f"❌ Не удалось найти информацию по растению: {latin_name}. Попробуй другое название или уточни запрос."
+Название растения: {latin_name}
 
-        source_text = "\n".join(snippets)
+Фрагменты:
+{chr(10).join(f'- {s}' for s in chunks)}
 
-        if not data:
-            prompt_text = f"""Ты — специалист по растениям и уходу за ними.
-На основе информации ниже составь понятную, структурированную карточку ухода.
-
-Латинское название растения: {latin_name}
-
-Ниже — сырые фрагменты с сайтов на английском языке. Переведи их на живой, грамотный русский язык. Удали всё лишнее, сохрани только факты по уходу за растением. Не пиши источники. Не добавляй от себя. Не используй канцелярит.
-Если у растения есть устоявшееся русское название — используй только его, даже если латинское название было изменено. Никогда не транслитерируй латинские имена — не пиши «Тауматофиллум» вместо «Филодендрон», если такое название не используется в русскоязычных источниках.
-
-Сниппеты:
-{chr(10).join(f'- {s}' for s in snippets)}
-
-Твоя задача — выделить и сгруппировать факты в карточку ухода для русскоязычного пользователя.
-
-Формат:
-Название: (русское имя) ({latin_name})
-Семейство: ...
-Тип: ...
-Садовое / комнатное: ...
-Свет: ...
-Полив: ...
-Температура: ...
-Почва: ...
-Удобрения: ...
-Обрезка: ...
-Советы: (лайфхаки, наблюдения специалистов)
-
-Если информации нет — просто пропусти этот блок. Не пиши воду. Никаких HTML. Только читаемый формат для Telegram
+Собери карточку для Telegram. Без источников. Без воды. Структурируй по смыслу:
+– Свет
+– Полив
+– Температура
+– Влажность
+– Удобрения
+– Почва
+– Пересадка
+– Размножение
+– Особенности
+Если блоков не хватает — просто пропусти.
 """
 
+        # 4. Вызов GPT
+        completion = await openai_client.chat.completions.create(
+            model="gpt-4-turbo",
+            messages=[{"role": "user", "content": prompt_text}],
+            max_tokens=1500,
+            temperature=0.3
+        )
 
-            completion = await openai_client.chat.completions.create(
-                model="gpt-4-turbo",
-                messages=[{"role": "user", "content": prompt_text}],
-                max_tokens=1500,
-                temperature=0.3
-            )
+        gpt_raw = completion.choices[0].message.content.strip()
+        gpt_raw = gpt_raw.replace("**", "").replace("__", "")
 
-            gpt_raw = completion.choices[0].message.content.strip()
-            gpt_raw = gpt_raw.replace("**", "").replace("__", "")
-            await save_card({
-                "latin_name": latin_name,
-                "text": gpt_raw
-            })
-        else:
-            gpt_raw = data.get("text", "")
+        # 5. Сохранение в БД
+        await save_card({
+            "latin_name": latin_name,
+            "text": gpt_raw
+        })
 
         return f"<pre>{html.escape(gpt_raw[:3000])}</pre>"
 
     except Exception as e:
-        logger.error(f"[get_care_card_html] Unexpected error: {e}")
+        logger.error(f"[get_care_card_html] Ошибка: {e}")
         return f"<b>Ошибка обработки карточки:</b>\n\n<pre>{html.escape(str(e))}</pre>"
 
 async def handle_care_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
