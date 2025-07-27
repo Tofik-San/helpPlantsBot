@@ -229,10 +229,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 import openai
 
 async def get_short_card_html(latin_name, russian_name, chunks):
-    # Секции, которые используем
     needed_sections = ["Свет", "Полив", "Температура", "Влажность", "Удобрения", "Почва"]
-
-    # Отбор нужных фрагментов
     filtered = [
         f"{chunk['section']}: {chunk['content'].strip()}"
         for chunk in chunks
@@ -240,7 +237,6 @@ async def get_short_card_html(latin_name, russian_name, chunks):
     ]
     fragments_text = "\n".join(filtered)
 
-    # Промпт
     prompt = f"""Ты — ботаник.
 Составь краткую карточку ухода за растением строго по формату ниже.
 Тон: деловой, ботанический. Стиль: дружелюбный и отзывчивый.
@@ -258,20 +254,21 @@ async def get_short_card_html(latin_name, russian_name, chunks):
 {fragments_text}
 """
 
-try:
-    response = await openai.ChatCompletion.acreate(
-        model="gpt-4-turbo",
-        messages=[
-            {"role": "system", "content": "Ты ботаник. Отвечай строго по структуре. Тон: деловой. Стиль: дружелюбный."},
-            {"role": "user", "content": prompt}
-        ],
-        temperature=0.4
-    )
-    return response.choices[0].message.content.strip()
+    try:
+        response = await openai.ChatCompletion.acreate(
+            model="gpt-4-turbo",
+            messages=[
+                {"role": "system", "content": "Ты ботаник. Отвечай строго по структуре. Тон: деловой. Стиль: дружелюбный."},
+                {"role": "user", "content": prompt}
+            ],
+            temperature=0.4
+        )
+        return response.choices[0].message.content.strip()
 
-except Exception as e:
-    logger.error(f"[get_care_card_html] Ошибка: {e}")
-    return f"<b>Ошибка обработки карточки:</b>\n<pre>{html.escape(str(e))}</pre>"
+    except Exception as e:
+        logger.error(f"[get_short_card_html] Ошибка: {e}")
+        return f"<b>Ошибка обработки шорт-карточки:</b>\n<pre>{html.escape(str(e))}</pre>"
+
 
 async def handle_care_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle care button callbacks."""
