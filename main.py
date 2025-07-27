@@ -231,65 +231,49 @@ async def get_care_card_html(latin_name: str) -> str | None:
     import html
     from loguru import logger
     from faiss_search import get_chunks_by_latin_name
-    from service import get_card_by_latin_name, save_card
+    from openai import AsyncOpenAI
+from faiss_search import get_chunks_by_latin_name
 
+client = AsyncOpenAI()
+
+async def get_care_card_html(latin_name: str) -> str:
     try:
-        # 1. Проверка в БД
-        data = await get_card_by_latin_name(latin_name)
-        if data:
-            return f"<pre>{html.escape(data.get('text', '')[:3000])}</pre>"
-
-        # 2. Поиск через FAISS
-        chunks = get_chunks_by_latin_name(latin_name)
-        print("QUERY:", latin_name)
-        print("CHUNKS:", chunks)
-
+        # 1. Получение релевантных чанков
+        chunks = get_chunks_by_latin_name(latin_name, top_k=100)
         if not chunks:
             return f"❌ Не найдено информации по: {latin_name}"
 
-        # 3. Сборка prompt
-        prompt_text = f"""Ты — специалист по уходу за растениями.
-Составь структурированную карточку ухода на основе текста ниже.
+        texts_joined = "\n\n".join(chunks)
 
-Название растения: {latin_name}
+        # 2. Формирование промта
+        prompt = f"""
+На основе приведённых текстов сформируй подробную карточку ухода за растением "{latin_name}".
 
-Фрагменты:
-{chr(10).join(f'- {s}' for s in chunks)}
+Требования:
+– Укажи русское и латинское название
+– Сформируй разделы: Свет, Полив, Температура, Почва, Удобрения, Пересадка, Размножение, Болезни, Особенности
+– Используй точные данные из текста: градусы, интервалы, конкретные советы
+– Если каких-то разделов нет — не придумывай
+– Оформи как Telegram-сообщение: короткие абзацы, списки, структурировано
 
-Собери карточку для Telegram. Без источников. Без воды. Структурируй по смыслу:
-– Свет
-– Полив
-– Температура
-– Влажность
-– Удобрения
-– Почва
-– Пересадка
-– Размножение
-– Особенности
-Если блоков не хватает — просто пропусти.
+Тексты:
+{texts_joined}
 """
 
-        # 4. Вызов GPT
-        completion = await openai_client.chat.completions.create(
-            model="gpt-4-turbo",
-            messages=[{"role": "user", "content": prompt_text}],
-            max_tokens=1500,
+        # 3. Вызов GPT
+        response = await client.chat.completions.create(
+            model="gpt-4o",
+            messages=[{"role": "user", "content": prompt}],
             temperature=0.3
         )
 
-        gpt_raw = completion.choices[0].message.content.strip()
-        gpt_raw = gpt_raw.replace("**", "").replace("__", "")
-
-        # 5. Сохранение в БД
-        await save_card({
-            "latin_name": latin_name,
-            "text": gpt_raw
-        })
-
-        return f"<pre>{html.escape(gpt_raw[:3000])}</pre>"
+        result = response.choices[0].message.content
+        return result
 
     except Exception as e:
-        logger.error(f"[get_care_card_html] Ошибка: {e}")
+        import traceback
+        traceback.print_exc()
+        return f"❌ Ошибка при генерации карточки: {e}")
         return f"<b>Ошибка обработки карточки:</b>\n\n<pre>{html.escape(str(e))}</pre>"
 
 async def handle_care_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
