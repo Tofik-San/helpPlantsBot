@@ -273,7 +273,7 @@ async def get_care_card_html(latin_name: str) -> str:
     except Exception as e:
         import traceback
         traceback.print_exc()
-        return f"❌ Ошибка при генерации карточки: {e}")
+        return f"❌ Ошибка при генерации карточки: {e}"
         return f"<b>Ошибка обработки карточки:</b>\n\n<pre>{html.escape(str(e))}</pre>"
 
 async def handle_care_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
