@@ -9,7 +9,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 
 COPY . .
 
-RUN --mount=type=cache,id=pipcache,target=/root/.cache/pip \
+RUN --mount=type=cache,id=cache-pip,target=/root/.cache/pip \
     pip install --no-cache-dir --upgrade pip \
     && pip install --no-cache-dir -r requirements.txt
 
