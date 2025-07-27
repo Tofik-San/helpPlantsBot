@@ -241,6 +241,9 @@ async def get_care_card_html(latin_name: str) -> str | None:
 
         # 2. Поиск через FAISS
         chunks = get_chunks_by_latin_name(latin_name)
+        print("QUERY:", latin_name)
+        print("CHUNKS:", chunks)
+
         if not chunks:
             return f"❌ Не найдено информации по: {latin_name}"
 
