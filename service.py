@@ -86,22 +86,12 @@ async def save_card(data: dict):
     pool = await get_pool()
     async with pool.acquire() as conn:
         query = """
-        INSERT INTO gpt_cards (latin_name, text, source, version, updated_at)
-        VALUES ($1, $2, $3, $4, now())
+        INSERT INTO gpt_cards (latin_name, text)
+        VALUES ($1, $2)
         ON CONFLICT (latin_name) DO UPDATE
-        SET text = EXCLUDED.text,
-            source = EXCLUDED.source,
-            version = gpt_cards.version + 1,
-            updated_at = now()
+        SET text = EXCLUDED.text
         """
-        await conn.execute(
-            query,
-            data.get("latin_name"),
-            data.get("text"),
-            data.get("source", "RAG"),
-            data.get("version", 1)
-        )
-
+        await conn.execute(query, data.get("latin_name"), data.get("text"))
 
 
 # --- SerpAPI integration
