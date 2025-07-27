@@ -226,49 +226,68 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 # BLOCK 5: обработка карточки ухода через PostgreSQL и GPT-4
-import openai
-
-async def get_short_card_html(latin_name, russian_name, chunks):
-    needed_sections = ["Свет", "Полив", "Температура", "Влажность", "Удобрения", "Почва"]
-    filtered = [
-        f"{chunk['section']}: {chunk['content'].strip()}"
-        for chunk in chunks
-        if chunk['section'] in needed_sections
-    ]
-    fragments_text = "\n".join(filtered)
-
-    prompt = f"""Ты — ботаник.
-Составь краткую карточку ухода за растением строго по формату ниже.
-Тон: деловой, ботанический. Стиль: дружелюбный и отзывчивый.
-Пиши без лишней воды. Только по делу.
-
-Название: {latin_name} / {russian_name}
-Свет: …
-Полив: …
-Температура: …
-Влажность: …
-Удобрения: …
-Почва: …
-
-Используй только информацию из фрагментов ниже:
-{fragments_text}
-"""
+async def get_care_card_html(latin_name: str) -> str | None:
+    """RAG: Поиск чанков ухода по FAISS и генерация карточки GPT."""
+    import html
+    from loguru import logger
+    from faiss_search import get_chunks_by_latin_name
+    from service import get_card_by_latin_name, save_card
 
     try:
-        response = await openai.ChatCompletion.acreate(
+        # 1. Проверка в БД
+        data = await get_card_by_latin_name(latin_name)
+        if data:
+            return f"<pre>{html.escape(data.get('text', '')[:3000])}</pre>"
+
+        # 2. Поиск через FAISS
+        chunks = get_chunks_by_latin_name(latin_name)
+        if not chunks:
+            return f"❌ Не найдено информации по: {latin_name}"
+
+        # 3. Сборка prompt
+        prompt_text = f"""Ты — специалист по уходу за растениями.
+Составь структурированную карточку ухода на основе текста ниже.
+
+Название растения: {latin_name}
+
+Фрагменты:
+{chr(10).join(f'- {s}' for s in chunks)}
+
+Собери карточку для Telegram. Без источников. Без воды. Структурируй по смыслу:
+– Свет
+– Полив
+– Температура
+– Влажность
+– Удобрения
+– Почва
+– Пересадка
+– Размножение
+– Особенности
+Если блоков не хватает — просто пропусти.
+"""
+
+        # 4. Вызов GPT
+        completion = await openai_client.chat.completions.create(
             model="gpt-4-turbo",
-            messages=[
-                {"role": "system", "content": "Ты ботаник. Отвечай строго по структуре. Тон: деловой. Стиль: дружелюбный."},
-                {"role": "user", "content": prompt}
-            ],
-            temperature=0.4
+            messages=[{"role": "user", "content": prompt_text}],
+            max_tokens=1500,
+            temperature=0.3
         )
-        return response.choices[0].message.content.strip()
+
+        gpt_raw = completion.choices[0].message.content.strip()
+        gpt_raw = gpt_raw.replace("**", "").replace("__", "")
+
+        # 5. Сохранение в БД
+        await save_card({
+            "latin_name": latin_name,
+            "text": gpt_raw
+        })
+
+        return f"<pre>{html.escape(gpt_raw[:3000])}</pre>"
 
     except Exception as e:
-        logger.error(f"[get_short_card_html] Ошибка: {e}")
-        return f"<b>Ошибка обработки шорт-карточки:</b>\n<pre>{html.escape(str(e))}</pre>"
-
+        logger.error(f"[get_care_card_html] Ошибка: {e}")
+        return f"<b>Ошибка обработки карточки:</b>\n\n<pre>{html.escape(str(e))}</pre>"
 
 async def handle_care_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle care button callbacks."""
