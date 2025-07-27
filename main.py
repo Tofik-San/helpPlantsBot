@@ -226,64 +226,50 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 # BLOCK 5: обработка карточки ухода через PostgreSQL и GPT-4
-async def get_care_card_html(latin_name: str) -> str | None:
-    """RAG: Поиск чанков ухода по FAISS и генерация карточки GPT."""
-    import html
-    from loguru import logger
-    from faiss_search import get_chunks_by_latin_name
-    from service import get_card_by_latin_name, save_card
+import openai
 
-    try:
-        # 1. Проверка в БД
-        data = await get_card_by_latin_name(latin_name)
-        if data:
-            return f"<pre>{html.escape(data.get('text', '')[:3000])}</pre>"
+async def get_short_card_html(latin_name, russian_name, chunks):
+    # Секции, которые используем
+    needed_sections = ["Свет", "Полив", "Температура", "Влажность", "Удобрения", "Почва"]
 
-        # 2. Поиск через FAISS
-        chunks = get_chunks_by_latin_name(latin_name)
-        if not chunks:
-            return f"❌ Не найдено информации по: {latin_name}"
+    # Отбор нужных фрагментов
+    filtered = [
+        f"{chunk['section']}: {chunk['content'].strip()}"
+        for chunk in chunks
+        if chunk['section'] in needed_sections
+    ]
+    fragments_text = "\n".join(filtered)
 
-        # 3. Сборка prompt
-        prompt_text = f"""Ты — специалист по уходу за растениями.
-Составь структурированную карточку ухода на основе текста ниже.
+    # Промпт
+    prompt = f"""Ты — ботаник.
+Составь краткую карточку ухода за растением строго по формату ниже.
+Тон: деловой, ботанический. Стиль: дружелюбный и отзывчивый.
+Пиши без лишней воды. Только по делу.
 
-Название растения: {latin_name}
+Название: {latin_name} / {russian_name}
+Свет: …
+Полив: …
+Температура: …
+Влажность: …
+Удобрения: …
+Почва: …
 
-Фрагменты:
-{chr(10).join(f'- {s}' for s in chunks)}
-
-Собери карточку для Telegram. Без источников. Без воды. Структурируй по смыслу:
-– Свет
-– Полив
-– Температура
-– Влажность
-– Удобрения
-– Почва
-– Пересадка
-– Размножение
-– Особенности
-Если блоков не хватает — просто пропусти.
+Используй только информацию из фрагментов ниже:
+{fragments_text}
 """
 
-        # 4. Вызов GPT
-        completion = await openai_client.chat.completions.create(
-            model="gpt-4-turbo",
-            messages=[{"role": "user", "content": prompt_text}],
-            max_tokens=1500,
-            temperature=0.3
-        )
+    # GPT-4 Turbo
+    response = await openai.ChatCompletion.acreate(
+        model="gpt-4-turbo",
+        messages=[
+            {"role": "system", "content": "Ты ботаник. Отвечай строго по структуре. Тон: деловой. Стиль: дружелюбный."},
+            {"role": "user", "content": prompt}
+        ],
+        temperature=0.4
+    )
 
-        gpt_raw = completion.choices[0].message.content.strip()
-        gpt_raw = gpt_raw.replace("**", "").replace("__", "")
+    return response.choices[0].message.content.strip()
 
-        # 5. Сохранение в БД
-        await save_card({
-            "latin_name": latin_name,
-            "text": gpt_raw
-        })
-
-        return f"<pre>{html.escape(gpt_raw[:3000])}</pre>"
 
     except Exception as e:
         logger.error(f"[get_care_card_html] Ошибка: {e}")
