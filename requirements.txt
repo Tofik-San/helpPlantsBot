@@ -16,4 +16,5 @@ httpx
 faiss-cpu
 huggingface-hub==0.16.4
 torch
+tokenizers==0.13.3
 sentence-transformers==2.2.2
