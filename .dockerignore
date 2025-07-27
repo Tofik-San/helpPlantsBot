@@ -1,0 +1,12 @@
+__pycache__/
+*.pyc
+*.pkl
+*.bin
+raw_pages/
+*.json
+*.jsonl
+.env
+venv/
+.idea/
+*.log
+.DS_Store

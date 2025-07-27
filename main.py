@@ -258,7 +258,7 @@ async def get_short_card_html(latin_name, russian_name, chunks):
 {fragments_text}
 """
 
-    # GPT-4 Turbo
+try:
     response = await openai.ChatCompletion.acreate(
         model="gpt-4-turbo",
         messages=[
@@ -267,13 +267,11 @@ async def get_short_card_html(latin_name, russian_name, chunks):
         ],
         temperature=0.4
     )
-
     return response.choices[0].message.content.strip()
 
-
-    except Exception as e:
-        logger.error(f"[get_care_card_html] Ошибка: {e}")
-        return f"<b>Ошибка обработки карточки:</b>\n\n<pre>{html.escape(str(e))}</pre>"
+except Exception as e:
+    logger.error(f"[get_care_card_html] Ошибка: {e}")
+    return f"<b>Ошибка обработки карточки:</b>\n<pre>{html.escape(str(e))}</pre>"
 
 async def handle_care_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle care button callbacks."""
