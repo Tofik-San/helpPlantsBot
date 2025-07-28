@@ -231,7 +231,7 @@ async def get_care_card_html(latin_name: str) -> str | None:
     import html
     from loguru import logger
     from faiss_search import get_chunks_by_latin_name
-    from service import get_card_by_latin_name, save_card
+    from service import get_card_by_latin_name, save_card, get_russian_name, get_category_by_latin
 
     try:
         # 1. Проверка в БД
@@ -239,21 +239,24 @@ async def get_care_card_html(latin_name: str) -> str | None:
         if data:
             return f"<pre>{html.escape(data.get('text', '')[:3000])}</pre>"
 
-        # 2. Поиск через FAISS
+        # 2. Получение чанков
         chunks = get_chunks_by_latin_name(latin_name)
         if not chunks:
             return f"❌ Не найдено информации по: {latin_name}"
 
-        # 3. Сборка prompt
+        # 3. Название и категория
+        try:
+            russian_name = get_russian_name(latin_name)
+            category_type = get_category_by_latin(latin_name)
+        except Exception as e:
+            logger.error(f"[get_care_card_html] Ошибка при получении имени/категории: {e}")
+            return f"❌ Ошибка: не удалось получить имя или категорию для {latin_name}"
+
+        # 4. Формируем prompt
+        fragments_text = "\n".join(f"- {s}" for s in chunks)
+
         prompt_text = f"""Ты — специалист по уходу за растениями.
 Составь структурированную карточку ухода на основе текста ниже.
-
-Название растения: {latin_name}
-
-Фрагменты:
-{chr(10).join(f'- {s}' for s in chunks)}
-
-Твоя задача — составить структурированную карточку ухода по строго заданному шаблону.
 
 🌿 Название:
 {latin_name} / {russian_name}
@@ -297,9 +300,12 @@ async def get_care_card_html(latin_name: str) -> str | None:
 - Не меняй порядок блоков.
 - Эмодзи — только в заголовках.
 - Без вводных ("рекомендуется", "следует", "важно").
+
+Фрагменты:
+{fragments_text}
 """
 
-        # 4. Вызов GPT
+        # 5. Вызов GPT
         completion = await openai_client.chat.completions.create(
             model="gpt-4-turbo",
             messages=[{"role": "user", "content": prompt_text}],
@@ -310,7 +316,7 @@ async def get_care_card_html(latin_name: str) -> str | None:
         gpt_raw = completion.choices[0].message.content.strip()
         gpt_raw = gpt_raw.replace("**", "").replace("__", "")
 
-        # 5. Сохранение в БД
+        # 6. Сохранение в БД
         await save_card({
             "latin_name": latin_name,
             "text": gpt_raw
