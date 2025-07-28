@@ -193,12 +193,9 @@ cython_debug/
 .cursorignore
 .cursorindexingignore
 
-# ───── Специфично под FAISS и генераторы ─────
-clean_chunks.jsonl
-latin_name_map.json
 
 # Генераторные скрипты (если не прод)
-build_faiss_index.py
-vectorize_chunks.py
-parser_chunks.py
 raw_pages/
+parser_chunks.py
+vectorize_chunks.py
+build_faiss_index.py
