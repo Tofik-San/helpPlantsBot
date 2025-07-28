@@ -231,7 +231,7 @@ async def get_care_card_html(latin_name: str) -> str | None:
     import html
     from loguru import logger
     from faiss_search import get_chunks_by_latin_name
-    from service import get_card_by_latin_name, save_card, get_russian_name, get_category_by_latin
+    from service import get_card_by_latin_name, save_card
 
     try:
         # 1. Проверка в БД
