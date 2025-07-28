@@ -232,6 +232,7 @@ async def get_care_card_html(latin_name: str) -> str | None:
     from loguru import logger
     from faiss_search import get_chunks_by_latin_name
     from service import get_card_by_latin_name, save_card
+    from service import get_russian_name, get_category_by_latin
 
     try:
         # 1. Проверка в БД
@@ -244,15 +245,16 @@ async def get_care_card_html(latin_name: str) -> str | None:
         if not chunks:
             return f"❌ Не найдено информации по: {latin_name}"
 
-        # 3. Сборка prompt
-        # если russian_name и category_type ещё не определены:
-try:
-    russian_name = get_russian_name(latin_name)
-    category_type = get_category_by_latin(latin_name)
-except Exception as e:
-    print(f"❌ Ошибка при получении имени или категории: {e}")
-    return "Произошла ошибка при генерации карточки."
-prompt_text = f"""Ты — ботаник-ассистент. На вход ты получаешь латинское название растения и текстовые сниппеты с информацией по уходу.
+        # 3. Получение названия и категории
+        try:
+            russian_name = get_russian_name(latin_name)
+            category_type = get_category_by_latin(latin_name)
+        except Exception as e:
+            print(f"❌ Ошибка при получении имени или категории: {e}")
+            return "Произошла ошибка при генерации карточки."
+
+        # 4. Сборка prompt
+        prompt_text = f"""Ты — ботаник-ассистент. На вход ты получаешь латинское название растения и текстовые сниппеты с информацией по уходу.
 
 Твоя задача — составить структурированную карточку ухода по строго заданному шаблону.
 
@@ -303,7 +305,7 @@ prompt_text = f"""Ты — ботаник-ассистент. На вход ты
 {'\n'.join(f'- {s}' for s in chunks)}
 """
 
-        # 4. Вызов GPT
+        # 5. Вызов GPT
         completion = await openai_client.chat.completions.create(
             model="gpt-4-turbo",
             messages=[{"role": "user", "content": prompt_text}],
@@ -314,7 +316,7 @@ prompt_text = f"""Ты — ботаник-ассистент. На вход ты
         gpt_raw = completion.choices[0].message.content.strip()
         gpt_raw = gpt_raw.replace("**", "").replace("__", "")
 
-        # 5. Сохранение в БД
+        # 6. Сохранение в БД
         await save_card({
             "latin_name": latin_name,
             "text": gpt_raw
@@ -325,6 +327,7 @@ prompt_text = f"""Ты — ботаник-ассистент. На вход ты
     except Exception as e:
         logger.error(f"[get_care_card_html] Ошибка: {e}")
         return f"<b>Ошибка обработки карточки:</b>\n\n<pre>{html.escape(str(e))}</pre>"
+
 
 async def handle_care_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Handle care button callbacks."""
