@@ -246,9 +246,12 @@ async def get_care_card_html(latin_name: str) -> str | None:
 
         # 3. Сборка prompt
         # если russian_name и category_type ещё не определены:
-russian_name = get_russian_name(latin_name)
-category_type = get_category_by_latin(latin_name)
-
+try:
+    russian_name = get_russian_name(latin_name)
+    category_type = get_category_by_latin(latin_name)
+except Exception as e:
+    print(f"❌ Ошибка при получении имени или категории: {e}")
+    return "Произошла ошибка при генерации карточки."
 prompt_text = f"""Ты — ботаник-ассистент. На вход ты получаешь латинское название растения и текстовые сниппеты с информацией по уходу.
 
 Твоя задача — составить структурированную карточку ухода по строго заданному шаблону.
