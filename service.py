@@ -1,19 +1,25 @@
 import os
 import logging
 import aiohttp
-import requests
+import html
 from urllib.parse import urlparse
+import asyncpg
+from loguru import logger
+from faiss_search import get_chunks_by_latin_name
+from openai import AsyncOpenAI
 
+# --- ENV ---
 PLANT_ID_API_KEY = os.getenv("PLANT_ID_API_KEY")
-SERPAPI_KEY = os.getenv("SERPAPI_KEY")
-logger = logging.getLogger(__name__)
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
 
+# --- HEADERS ---
 HEADERS = {
     "Content-Type": "application/json",
     "Api-Key": PLANT_ID_API_KEY
 }
 
-
+# --- IDENTIFY PLANT ---
 async def identify_plant(image_path: str) -> dict:
     try:
         with open(image_path, "rb") as image_file:
@@ -41,10 +47,7 @@ async def identify_plant(image_path: str) -> dict:
         logger.error(f"[identify_plant] Ошибка запроса к Plant.id: {e}")
         return {"error": f"Ошибка Plant.id: {str(e)}"}
 
-
-# --- PostgreSQL connection pool
-import asyncpg
-
+# --- DATABASE ---
 DATABASE_URL = os.getenv("DATABASE_URL")
 parsed = urlparse(DATABASE_URL) if DATABASE_URL else None
 
@@ -57,7 +60,6 @@ PG_DB = parsed.path[1:] if parsed and parsed.path.startswith('/') else None
 _pool = None
 
 async def get_pool():
-    """Return a cached asyncpg connection pool."""
     global _pool
     if _pool is None:
         _pool = await asyncpg.create_pool(
@@ -69,9 +71,7 @@ async def get_pool():
         )
     return _pool
 
-
 async def get_card_by_latin_name(latin_name: str) -> dict | None:
-    """Fetch care card by latin name from PostgreSQL."""
     pool = await get_pool()
     async with pool.acquire() as conn:
         row = await conn.fetchrow(
@@ -80,9 +80,7 @@ async def get_card_by_latin_name(latin_name: str) -> dict | None:
         )
         return dict(row) if row else None
 
-
 async def save_card(data: dict):
-    """Insert or update care card in PostgreSQL."""
     pool = await get_pool()
     async with pool.acquire() as conn:
         query = """
@@ -93,75 +91,81 @@ async def save_card(data: dict):
         """
         await conn.execute(query, data.get("latin_name"), data.get("text"))
 
+# --- CARD GENERATION ---
+async def generate_care_card(latin_name: str) -> str:
+    data = await get_card_by_latin_name(latin_name)
+    if data:
+        return f"<pre>{html.escape(data.get('text', '')[:3000])}</pre>"
 
-# --- SerpAPI integration
-def get_snippets_from_serpapi(query: str) -> list[str]:
-    params = {
-        "q": query,
-        "engine": "google",
-        "hl": "ru",
-        "gl": "ru",
-        "num": 10,
-        "api_key": os.getenv("SERPAPI_KEY"),
-    }
+    chunks = get_chunks_by_latin_name(latin_name)
+    if not chunks:
+        return f"❌ Не найдено информации по: {latin_name}"
 
-    try:
-        response = requests.get("https://serpapi.com/search", params=params)
-        data = response.json()
-        return [
-            result["snippet"]
-            for result in data.get("organic_results", [])
-            if "snippet" in result
-        ]
-    except Exception as e:
-        logger.error(f"[SerpAPI] Ошибка: {e}")
-        return []
+    prompt_text = f"""Ты — специалист по уходу за растениями.
+Составь структурированную карточку ухода на основе текста ниже.
 
+Название растения: {latin_name}
 
-# --- Расширение под смешанные сниппеты
+Фрагменты:
+{chr(10).join(f'- {s}' for s in chunks)}
 
-RU_PLANT_SOURCES = [
-    "stroy-podskazka.ru",
-    "floristics.info",
-    "wiki-dacha.ru",
-    "rastenia.info",
-    "dzengarden.ru",
-    "shop.pitomnik-sochi.ru"
-]
+Собери карточку для Telegram. Без источников. Без воды. Структурируй по смыслу:
+🌿 Название:
+{latin_name}
 
-def build_ru_query(ru_name: str) -> str:
-    base = f"{ru_name} уход"
-    sites = " OR ".join(f"site:{s}" for s in RU_PLANT_SOURCES)
-    return f"{base} {sites}"
+🧬 Семейство:
+(уточняется из чанков)
 
-def build_en_query(latin_name: str) -> str:
-    return f"{latin_name} site:en.wikipedia.org OR site:wikipedia.org"
+📂 Категория:
+(уточняется из чанков)
 
-def filter_snippets(snippets: list[str]) -> list[str]:
-    keywords = ["light", "sun", "shade", "soil", "water", "prune", "maintenance", "fertilizer", "temperature", "care", "уход", "полив", "пересадка"]
-    return [s for s in snippets if any(k in s.lower() for k in keywords)]
+💡 Свет:
+...
 
-async def get_combined_snippets(latin_name: str, ru_name: str) -> list[str]:
-    q_ru = build_ru_query(ru_name)
-    q_en = build_en_query(latin_name)
+💧 Полив:
+...
 
-    snippets_ru = get_snippets_from_serpapi(q_ru)
-    snippets_en = get_snippets_from_serpapi(q_en)
+🌡 Температура:
+...
 
-    clean_ru = filter_snippets(snippets_ru)
-    clean_en = filter_snippets(snippets_en)
+💨 Влажность:
+...
 
-    return clean_ru + clean_en
+🍽 Удобрения:
+...
 
-PLANT_NAME_MAP = {
-    "Euonymus alatus": "Бересклет крылатый",
-    "Ficus elastica": "Фикус эластика",
-    "Sansevieria trifasciata": "Сансевиерия трёхполосная",
-    "Zamioculcas zamiifolia": "Замиокулькас",
-    "Hibiscus rosa-sinensis": "Гибискус китайский",
-    "Aloe vera": "Алоэ вера",
-    # дополняй
-}
+🌱 Почва:
+...
 
-def map_latin_to_russian(latin_name: str) -> str:
-    return PLANT_NAME_MAP.get(latin_name, latin_name)
+♻ Пересадка:
+...
+
+🧬 Размножение:
+...
+
+⭐ Особенности:
+...
+
+Правила:
+- Используй только факты из фрагментов. Не выдумывай.
+- Если блока нет — пиши: \"Информация отсутствует.\"
+- Не меняй порядок блоков.
+- Эмодзи — только в заголовках.
+- Без вводных (\"рекомендуется\", \"следует\", \"важно\")."""
+
+    completion = await openai_client.chat.completions.create(
+        model="gpt-4-turbo",
+        messages=[{"role": "user", "content": prompt_text}],
+        max_tokens=1500,
+        temperature=0.3
+    )
+
+    gpt_raw = completion.choices[0].message.content.strip()
+    gpt_raw = gpt_raw.replace("**", "").replace("__", "")
+
+    await save_card({
+        "latin_name": latin_name,
+        "text": gpt_raw
+    })
+
+    return f"<pre>{html.escape(gpt_raw[:3000])}</pre>"
