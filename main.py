@@ -195,7 +195,11 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         top = suggestions[0]
         name = top.get("plant_name", "неизвестно")
         prob = round(top.get("probability", 0) * 100, 2)
+        details = top.get("plant_details", {})
+        common_names = details.get("common_names", [])
+        russian_name = common_names[0] if common_names else name
 
+       
         # BLOCK 1.2: фильтрация мусора
         if is_plant_prob >= 0.2:
             # BLOCK 5: кнопка ухода
@@ -204,7 +208,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             )
             await context.bot.send_message(
                 chat_id=update.effective_chat.id,
-                text=f"🌱 Похоже, это: {name} ({prob}%)",
+                text=f"🌱 Похоже, это: {russian_name} / {name} ({prob}%)",
                 reply_markup=keyboard,
                 parse_mode="HTML",
             )
