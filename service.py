@@ -20,17 +20,20 @@ HEADERS = {
 }
 
 # --- IDENTIFY PLANT ---
+import base64
+
 async def identify_plant(image_path: str) -> dict:
     try:
         with open(image_path, "rb") as image_file:
             image_data = image_file.read()
+            encoded_image = base64.b64encode(image_data).decode("utf-8")
     except Exception as e:
         logger.error(f"[identify_plant] Ошибка при чтении файла {image_path}: {e}")
         return {"error": f"Ошибка при чтении файла: {str(e)}"}
 
     url = "https://api.plant.id/v2/identify"
     payload = {
-        "images": [image_data.decode("latin1")],
+        "images": [encoded_image],
         "modifiers": ["similar_images"],
         "plant_language": "ru",
         "plant_details": ["common_names", "url", "name_authority", "wiki_description", "taxonomy"]
