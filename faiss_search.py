@@ -1,21 +1,32 @@
-import os
 import faiss
 import pickle
 import numpy as np
 from sentence_transformers import SentenceTransformer
+from pathlib import Path
 
-# Абсолютный путь к директории скрипта
-BASE_DIR = os.path.dirname(__file__)
+# Пути к индексам
+INDEX_PATH = Path("faiss_index.bin")
+META_PATH = Path("faiss_metadata.pkl")
 
-# Загрузка модели и индекса
+# Загрузка FAISS-индекса
+index = faiss.read_index(str(INDEX_PATH))
+
+# Загрузка метаданных
+with META_PATH.open("rb") as f:
+    db = pickle.load(f)  # это list[dict], где каждый dict = {"content", "latin_name", ...}
+
+# Загрузка модели
 model = SentenceTransformer("paraphrase-multilingual-mpnet-base-v2")
 
-index = faiss.read_index(os.path.join(BASE_DIR, "faiss_index.bin"))
 
-with open(os.path.join(BASE_DIR, "faiss_metadata.pkl"), "rb") as f:
-    db = pickle.load(f)
-
-def get_chunks_by_latin_name(latin_name: str, top_k: int = 7) -> list[str]:
+def get_chunks_by_latin_name(latin_name: str, top_k: int = 7) -> list[dict]:
+    """Ищет наиболее релевантные чанки по латинскому названию"""
     query_vector = model.encode([latin_name])
     D, I = index.search(np.array(query_vector).astype("float32"), top_k)
-    return [db["texts"][i] for i in I[0] if i < len(db["texts"])]
+
+    results = []
+    for i in I[0]:
+        if i < len(db):
+            results.append(db[i])  # каждый — dict с content, latin_name, section, category_type
+
+    return results
