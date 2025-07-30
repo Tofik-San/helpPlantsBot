@@ -112,8 +112,13 @@ async def generate_care_card(latin_name: str) -> str:
         return f"<pre>{html.escape(data.get('text', '')[:3000])}</pre>"
 
     # 2. Поиск чанков в FAISS
-    chunks = get_chunks_by_latin_name(latin_name)
-    logger.debug(f"[generate_care_card] Чанков найдено: {len(chunks)}")
+    raw_chunks = get_chunks_by_latin_name(latin_name, top_k=10)
+chunks = [ch for ch in raw_chunks if latin_name.lower() in ch["latin_name"].lower()]
+if not chunks:
+    chunks = raw_chunks[:5]  # fallback хотя бы что-то
+
+logger.debug(f"[generate_care_card] Чанков найдено: {len(chunks)}")
+
     if not chunks:
         return f"❌ Не найдено информации по: {latin_name}"
 
