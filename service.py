@@ -5,7 +5,7 @@ async def generate_care_card(latin_name: str) -> str:
     from loguru import logger
 
     from faiss_search import get_chunks_by_latin_name
-    from .db import get_card_by_latin_name, save_card
+    from db import get_card_by_latin_name, save_card
 
     # 1. Проверка кэша
     data = await get_card_by_latin_name(latin_name)
