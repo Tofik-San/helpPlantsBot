@@ -117,15 +117,27 @@ import base64
 import os
 from loguru import logger
 
-async def identify_plant(photo_path: str) -> str | None:
+async def identify_plant(photo_path: str) -> dict | None:
     """Определение растения по фото через Plant.id"""
+    import requests
+    import base64
+    import os
+
+    from loguru import logger
+
     url = "https://api.plant.id/v2/identify"
     api_key = os.getenv("PLANT_ID_API_KEY")
+    if not api_key:
+        logger.error("[identify_plant] Переменная PLANT_ID_API_KEY не задана!")
+        return None
 
     with open(photo_path, "rb") as f:
         image_bytes = f.read()
 
-    headers = {"Content-Type": "application/json"}
+    headers = {
+        "Content-Type": "application/json",
+        "Api-Key": api_key
+    }
     payload = {
         "images": [f"data:image/jpeg;base64,{base64.b64encode(image_bytes).decode()}"],
         "organs": ["leaf", "flower", "fruit", "bark"],
@@ -133,26 +145,14 @@ async def identify_plant(photo_path: str) -> str | None:
     }
 
     try:
-        response = requests.post(url, json=payload, headers=headers, timeout=20, auth=(api_key, ""))
-        
+        response = requests.post(url, json=payload, headers=headers, timeout=20)
+
         if response.status_code != 200:
             logger.error(f"[identify_plant] Bad status {response.status_code}: {response.text}")
             return None
-        
-        try:
-            result = response.json()
-        except Exception as e:
-            logger.error(f"[identify_plant] response not JSON: {response.text}")
-            return None
 
-        suggestions = result.get("suggestions", [])
-        if not suggestions:
-            logger.warning(f"[identify_plant] No suggestions returned. Full response: {result}")
-            return None
-
-        best = suggestions[0]
-        plant_name = best.get("plant_name", "")
-        return plant_name
+        result = response.json()
+        return result
 
     except Exception as e:
         logger.error(f"[identify_plant] Ошибка: {e}")
