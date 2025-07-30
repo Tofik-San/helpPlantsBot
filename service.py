@@ -1,23 +1,43 @@
 async def generate_care_card(latin_name: str) -> str:
+    import html
+    import json
+    from pathlib import Path
     from loguru import logger
+
+    from faiss_search import get_chunks_by_latin_name
+    from .db import get_card_by_latin_name, save_card
 
     # 1. Проверка кэша
     data = await get_card_by_latin_name(latin_name)
     if data:
         return f"<pre>{html.escape(data.get('text', '')[:3000])}</pre>"
 
-    # 2. Поиск чанков в FAISS
-    raw_chunks = get_chunks_by_latin_name(latin_name, top_k=10)
-    chunks = [ch for ch in raw_chunks if latin_name.lower() in ch["latin_name"].lower()]
+    # 2. Загрузка мапа латинских имён
+    LATIN_MAP_PATH = Path("latin_name_map.json")
+    latin_name_map = json.loads(LATIN_MAP_PATH.read_text(encoding="utf-8"))
+
+    def resolve_latin_name(query: str) -> str:
+        query = query.lower()
+        for fname, canon in latin_name_map.items():
+            canon_l = canon.lower()
+            if query in canon_l or canon_l in query:
+                return canon
+        return query
+
+    latin_query = resolve_latin_name(latin_name)
+
+    # 3. Поиск чанков
+    raw_chunks = get_chunks_by_latin_name(latin_query, top_k=10)
+    chunks = [ch for ch in raw_chunks if latin_query.lower() in ch["latin_name"].lower()]
     if not chunks:
-        chunks = raw_chunks[:5]  # fallback хотя бы что-то
+        chunks = raw_chunks[:5]
 
     logger.debug(f"[generate_care_card] Чанков найдено: {len(chunks)}")
 
     if not chunks:
         return f"❌ Не найдено информации по: {latin_name}"
 
-    # 3. Промт
+    # 4. Промт
     prompt_text = f"""Ты — специалист по уходу за растениями.
 Составь структурированную карточку ухода на основе текста ниже.
 
@@ -71,7 +91,7 @@ async def generate_care_card(latin_name: str) -> str:
 - Без вводных ("рекомендуется", "следует", "важно").
 """
 
-    # 4. GPT-запрос
+    # 5. GPT
     try:
         completion = await openai_client.chat.completions.create(
             model="gpt-4-turbo",
@@ -85,7 +105,7 @@ async def generate_care_card(latin_name: str) -> str:
         logger.error(f"[generate_care_card] GPT ошибка: {e}")
         return f"<b>Ошибка генерации:</b>\n\n<pre>{html.escape(str(e))}</pre>"
 
-    # 5. Сохранение
+    # 6. Сохранение
     await save_card({
         "latin_name": latin_name,
         "text": gpt_raw
