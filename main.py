@@ -16,23 +16,31 @@ from telegram.ext import (
     Application, CommandHandler, MessageHandler, CallbackQueryHandler,
     ContextTypes, filters
 )
-from service import identify_plant, generate_care_card
+from openai import AsyncOpenAI
+import httpx
 from limit_checker import check_and_increment_limit
+from service import get_card_by_latin_name, save_card
 
 # --- Конфиги
 TOKEN = os.getenv("BOT_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
+PLANT_ID_API_KEY = os.getenv("PLANT_ID_API_KEY")
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+
+openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
+DEBUG_GPT = os.getenv("DEBUG_GPT") == "1"
 
 # --- Логирование
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
+# --- Filter to avoid leaking the bot token in logs
 class _TokenFilter(logging.Filter):
     def __init__(self, token: str) -> None:
         super().__init__()
         self.token = token or ""
 
-    def filter(self, record: logging.LogRecord) -> bool:
+    def filter(self, record: logging.LogRecord) -> bool:  # pragma: no cover - simple sanitization
         if self.token:
             token_mask = "<TOKEN>"
             record.msg = str(record.msg).replace(self.token, token_mask)
@@ -44,6 +52,8 @@ class _TokenFilter(logging.Filter):
         return True
 
 logging.getLogger().addFilter(_TokenFilter(TOKEN))
+
+# BLOCK 7: silence httpx logs and prevent propagation
 logging.getLogger("httpx").setLevel(logging.WARNING)
 logging.getLogger("httpx").propagate = False
 
@@ -51,8 +61,27 @@ logging.getLogger("httpx").propagate = False
 app = FastAPI()
 application = Application.builder().token(TOKEN).build()
 app_state_ready = False
+
+# BLOCK 1: storage for last recognition timestamps
 user_last_request = {}
+
 os.makedirs("temp", exist_ok=True)
+
+def strip_tags(text: str) -> str:
+    import re
+    return re.sub(r"<[^>]+>", "", text)
+
+def clean_description(data: dict) -> dict:
+    name = data.get("name", "").strip()
+    desc = data.get("short_description", "").strip()
+
+    desc_cleaned = strip_tags(desc)
+    if name and desc_cleaned.startswith(name):
+        desc_cleaned = desc_cleaned[len(name):].strip(" .,\n")
+
+    data["short_description"] = desc_cleaned
+    return data
+
 
 # --- /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -69,80 +98,120 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 # --- Обработка фото
-# --- Обработка фото
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         user_id = update.effective_user.id
         now = datetime.utcnow()
 
-        # --- Защита от альбомов
+        # BLOCK 1: check for multiple photos (albums)
         if update.message.media_group_id:
-            await update.message.reply_text("📸 Отправьте, пожалуйста, только одно фото за раз.", parse_mode="HTML")
+            await update.message.reply_text(
+                "📸 Отправьте, пожалуйста, только одно фото за раз.",
+                parse_mode="HTML",
+            )
+            logger.info(
+                f"[BLOCK 1] Refuse album user {user_id} at {now.isoformat()} reason=album")
             return
 
-        # --- Антиспам 15 сек
+        # BLOCK 1: rate limiting between recognitions
         last_time = user_last_request.get(user_id)
         if last_time and (now - last_time).total_seconds() < 15:
-            await update.message.reply_text("⏱ Подождите 15 секунд перед новой попыткой.", parse_mode="HTML")
+            await update.message.reply_text(
+                "⏱ Подождите 15 секунд перед новой попыткой.",
+                parse_mode="HTML",
+            )
+            logger.info(
+                f"[BLOCK 1] Rate limit user {user_id} at {now.isoformat()} reason=rate_limit")
             return
         user_last_request[user_id] = now
 
-        # --- Ограничение размера фото
         photo = update.message.photo[-1]
+        # BLOCK 1: size check before downloading
         if photo.file_size and photo.file_size > 5 * 1024 * 1024:
-            await update.message.reply_text("❌ Фото слишком большое. Попробуйте другое.", parse_mode="HTML")
+            await update.message.reply_text(
+                "❌ Не удалось распознать растение. Попробуйте другое фото.",
+                parse_mode="HTML",
+            )
+            logger.info(
+                f"[BLOCK 1] Reject large file from user {user_id} at {datetime.utcnow().isoformat()} size={photo.file_size} reason=size")
             return
 
-        # --- Скачивание фото
         file = await context.bot.get_file(photo.file_id)
         temp_path = "temp/plant.jpg"
         await file.download_to_drive(custom_path=temp_path)
 
-        # --- Проверка формата изображения
+        # BLOCK 1: format check
         img_type = imghdr.what(temp_path)
         if img_type not in ("jpeg", "png"):
-            await update.message.reply_text("❌ Не удалось распознать формат. Попробуйте другое фото.", parse_mode="HTML")
+            await update.message.reply_text(
+                "❌ Не удалось распознать растение. Попробуйте другое фото.",
+                parse_mode="HTML",
+            )
+            logger.info(
+                f"[BLOCK 1] Reject format {img_type} from user {user_id} at {datetime.utcnow().isoformat()} reason=format")
             return
 
-        # --- Лимит по пользователю
+        # BLOCK 2: daily usage limit
         if not await check_and_increment_limit(user_id):
-            await update.message.reply_text("🚫 Лимит на сегодня исчерпан. Попробуйте завтра.", parse_mode="HTML")
+            await update.message.reply_text(
+                "🚫 Лимит на сегодня исчерпан. Попробуйте завтра.",
+                parse_mode="HTML",
+            )
             return
 
-        # --- Распознавание
-        await update.message.reply_text("Распознаю растение…", parse_mode="HTML")
-        result = await identify_plant(temp_path)
+        await update.message.reply_text(
+            "Распознаю растение…",
+            parse_mode="HTML",
+        )
 
-        if not result:
-            logger.warning(f"[handle_photo] identify_plant вернул None для user_id={user_id}")
-            await update.message.reply_text("❌ Не удалось распознать растение. Попробуйте другое фото.", parse_mode="HTML")
-            return
+        with open(temp_path, "rb") as image_file:
+            image_bytes = image_file.read()
+            image_b64 = base64.b64encode(image_bytes).decode("utf-8")
+
+        async with httpx.AsyncClient() as client:
+            response = await client.post(
+                "https://api.plant.id/v2/identify",
+                headers={"Api-Key": PLANT_ID_API_KEY},
+                json={
+                    "images": [image_b64],
+                    "organs": ["leaf", "flower"]
+                }
+            )
+
+        result = response.json()
+        # BLOCK 1: probability check from Plant.id
+        is_plant_prob = result.get("is_plant_probability", 0)
 
         suggestions = result.get("suggestions", [])
         if not suggestions:
-            logger.warning(f"[handle_photo] Пустой suggestions. Full result: {result}")
-            await update.message.reply_text("❌ Не удалось распознать растение.", parse_mode="HTML")
+            await update.message.reply_text(
+                "❌ Не удалось распознать растение. Попробуйте другое фото.",
+                parse_mode="HTML",
+            )
+            logger.info(
+                f"[BLOCK 1] No suggestions for user {user_id} at {datetime.utcnow().isoformat()} prob={is_plant_prob} reason=no_suggestions")
             return
 
         top = suggestions[0]
         name = top.get("plant_name", "неизвестно")
         prob = round(top.get("probability", 0) * 100, 2)
-        details = top.get("plant_details", {})
-        common_names = details.get("common_names", [])
-        russian_name = common_names[0] if common_names else name
 
-        is_plant_prob = result.get("is_plant_probability", 0)
+        # BLOCK 1.2: фильтрация мусора
         if is_plant_prob >= 0.2:
+            # BLOCK 5: кнопка ухода
             keyboard = InlineKeyboardMarkup(
                 [[InlineKeyboardButton("🧠 Уход от BOTanika", callback_data=f"care:{name}")]]
             )
             await context.bot.send_message(
                 chat_id=update.effective_chat.id,
-                text=f"🌱 Похоже, это: {russian_name} / {name} ({prob}%)",
+                text=f"🌱 Похоже, это: {name} ({prob}%)",
                 reply_markup=keyboard,
                 parse_mode="HTML",
             )
         else:
+            logger.info(
+                f"[BLOCK 1.2] Low probability {is_plant_prob} for user {user_id}"
+            )
             await context.bot.send_message(
                 chat_id=update.effective_chat.id,
                 text="❌ Не удалось распознать растение. Попробуйте другое фото.",
@@ -151,54 +220,204 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
         logger.error(f"[handle_photo] Ошибка: {e}\n{traceback.format_exc()}")
-        await update.message.reply_text("🚫 Ошибка при распознавании растения. Попробуйте позже.", parse_mode="HTML")
+        await update.message.reply_text(
+            "Ошибка при распознавании растения.",
+            parse_mode="HTML",
+        )
 
+# BLOCK 5: обработка карточки ухода через PostgreSQL и GPT-4
+async def get_care_card_html(latin_name: str) -> str | None:
+    """RAG: Поиск чанков ухода по FAISS и генерация карточки GPT."""
+    import html
+    from loguru import logger
+    from faiss_search import get_chunks_by_latin_name
+    from service import get_card_by_latin_name, save_card
 
-# --- Обработка кнопки ухода
-from telegram.error import BadRequest
-import time
+    try:
+        # 1. Проверка в БД
+        data = await get_card_by_latin_name(latin_name)
+        if data:
+            return f"<pre>{html.escape(data.get('text', '')[:3000])}</pre>"
+
+        # 2. Поиск через FAISS
+        chunks = get_chunks_by_latin_name(latin_name)
+        if not chunks:
+            return f"❌ Не найдено информации по: {latin_name}"
+
+        # 3. Сборка prompt
+        prompt_text = f"""Ты — специалист по уходу за растениями.
+Составь структурированную карточку ухода на основе текста ниже.
+
+Название растения: {latin_name}
+
+Фрагменты:
+{chr(10).join(f'- {s}' for s in chunks)}
+
+Собери карточку для Telegram. Без источников. Без воды. Структурируй по смыслу:
+– Свет
+– Полив
+– Температура
+– Влажность
+– Удобрения
+– Почва
+– Пересадка
+– Размножение
+– Особенности
+Если блоков не хватает — просто пропусти.
+"""
+
+        # 4. Вызов GPT
+        completion = await openai_client.chat.completions.create(
+            model="gpt-4-turbo",
+            messages=[{"role": "user", "content": prompt_text}],
+            max_tokens=1500,
+            temperature=0.3
+        )
+
+        gpt_raw = completion.choices[0].message.content.strip()
+        gpt_raw = gpt_raw.replace("**", "").replace("__", "")
+
+        # 5. Сохранение в БД
+        await save_card({
+            "latin_name": latin_name,
+            "text": gpt_raw
+        })
+
+        return f"<pre>{html.escape(gpt_raw[:3000])}</pre>"
+
+    except Exception as e:
+        logger.error(f"[get_care_card_html] Ошибка: {e}")
+        return f"<b>Ошибка обработки карточки:</b>\n\n<pre>{html.escape(str(e))}</pre>"
 
 async def handle_care_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle care button callbacks."""
     query = update.callback_query
+    await query.answer()
     latin_name = query.data.split(":", 1)[1]
-
-    # ⏱ Старт таймера
-    start_time = time.time()
-
-    try:
-        result = await generate_care_card(latin_name)
-    except Exception as e:
-        logger.error(f"[handle_care_button] Ошибка генерации карточки: {e}\n{traceback.format_exc()}")
-        await query.message.reply_text("❌ Ошибка при генерации карточки ухода.", parse_mode="HTML")
-        return
-
-    # 🕒 Пытаемся ответить на query
-    try:
-        await query.answer()
-    except BadRequest as e:
-        if "query is too old" in str(e).lower():
-            logger.warning(f"[handle_care_button] Просроченный callback: {e}")
-        else:
-            raise
-
-    # 🧾 Ответ пользователю
-    if not result:
-        await query.message.reply_text("❌ Не удалось сформировать карточку ухода.", parse_mode="HTML")
+    result = await get_care_card_html(latin_name)
+    if result is None:
+        await query.message.reply_text(
+            "❌ Ошибка при получении карточки ухода.",
+            parse_mode="HTML",
+        )
+    elif isinstance(result, dict):
+        msg = "❌ Ошибка при получении карточки ухода."
+        if DEBUG_GPT and result.get("raw"):
+            msg += f"\n\nRAW:\n{result['raw']}"
+        await query.message.reply_text(
+            msg,
+            parse_mode="HTML",
+        )
     else:
-        await query.message.reply_text(result, parse_mode="HTML")
+        await query.message.reply_text(
+            result,
+            parse_mode="HTML",
+        )
 
-    logger.info(f"[handle_care_button] Время генерации: {time.time() - start_time:.2f} сек.")
-
-
-# --- Обработка кнопок меню
+# --- Обработка текстовых кнопок
 async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = update.message.text
     if text == "ℹ️ О проекте":
-        await update.message.reply_text("Описание проекта...", parse_mode="HTML")
+        await update.message.reply_text(
+            """🌿 О проекте: GreenCore
+
+Изначально бот создавался как инструмент для системного ухода за растениями: с каталогом, планировщиком и ботами-модераторами.
+Тогда это был BOTanik — проект, объединяющий базу растений, советы и автоматизацию.
+
+Но всё быстро упёрлось в лимиты Telegram: можно было сделать красиво, но главная задача была в другом —
+максимально быстро и точно, без лишних клацаний, дать пользователю то, что нужно.
+
+🌀 Сейчас логика стала предельно чёткой:
+Фото → Название → Уход
+Никаких лишних действий. Только суть.
+
+🧠 Что умеет PROplants сегодня:
+– Определяет растение по фото
+– Выдаёт карточку с рекомендациями по уходу
+– Работает прямо в Telegram, без приложений и переходов
+
+🛠️ Текущий стек:
+– Python + FastAPI
+– Telegram Bot API (webhook)
+– httpx для сетевых запросов
+– Plant.id API — для AI-распознавания
+– JSON / SQLite — база растений
+
+🚀 Ближайшие шаги:
+✅ Расширение базы сортов
+✅ Советы от GPT по контексту
+✅ Распознавание болезней и вредителей
+✅ Кастомные версии для питомников
+✅ Интеграция мини-маркета
+
+👥 Кому подойдёт:
+– Владельцам домашних растений
+– Озеленителям и дизайнерам
+– Питомникам и магазинам
+– Всем, кто хочет ухаживать проще, точнее и быстрее
+
+💡 Почему это удобно:
+– Не нужно искать — бот сам всё покажет
+– Работает быстро и стабильно
+– Подходит и новичкам, и опытным
+
+📢 Канал проекта: https://t.me/BOTanikPlants
+📬 Связь: @veryhappyEpta""",
+            parse_mode="HTML",
+        )
     elif text == "📢 Канал":
-        await update.message.reply_text("Наш канал: https://t.me/BOTanikPlants", parse_mode="HTML")
+        await update.message.reply_text(
+            "Наш канал: https://t.me/BOTanikPlants",
+            parse_mode="HTML",
+        )
     elif text == "📘 Инфо":
-        await update.message.reply_text("Инструкция по использованию...", parse_mode="HTML")
+        await update.message.reply_text(
+            """📘 Как пользоваться ботом GreenCore
+
+🧭 Как ориентироваться в ответе:
+
+📸 Присылайте одно фото, не как файл, а как изображение.
+📏 Максимальный размер — до 5 МБ, иначе бот не сможет его обработать.
+
+🔍 После распознавания бот покажет название и уровень уверенности:
+– 🟢 85–100% — совпадение почти наверняка
+– 🟡 60–84% — возможно, стоит перепроверить
+- 🔴 менее 60% — лучше отправить другое фото
+💡 Если уверенность низкая:
+– Сфотографируйте растение под другим углом
+– Используйте естественное освещение
+– Избегайте бликов, размытости и темноты
+
+📷 Чем чище фото — тем точнее результат. Не жми, не прикладывай несколько сразу.
+
+
+👋 Что делает бот:
+– Отправьте фото растения — бот распознает его
+– Получите карточку ухода: свет, полив, пересадка и другое
+– Используйте кнопки снизу для доступа к каналу или описанию проекта
+
+❗ Важно:
+– Кнопка «О проекте» — расскажет об идее и будущем бота
+– Кнопка «Канал» — даёт доступ к новостям и обновлениям
+– В ближайшем обновлении появится: история распознаваний, подбор по условиям, и не только
+
+🪴 Что бот уже умеет:
+✅ Распознавать растение по фото
+✅ Давать советы по уходу на основе внутренней базы
+✅ Показывать уверенность распознавания
+✅ Работать быстро и без лишних действий
+
+📜 Политика использования:
+– Бот бесплатен и создан для помощи в уходе за растениями
+– Информация справочная и не заменяет консультации специалистов (пока что)
+– Уважайте труд автора. Конструктив всегда приветствуется
+
+🔔 Обновления и новые растения появляются регулярно — подпишитесь на канал, чтобы не пропустить:
+https://t.me/BOTanikPlants
+
+📬 Есть идеи или предложения? Пиши: @veryhappyEpta""",
+            parse_mode="HTML",
+        )
 
 # --- Хендлеры
 application.add_handler(CommandHandler("start", start))
@@ -206,6 +425,7 @@ application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
 application.add_handler(CallbackQueryHandler(handle_care_button))
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_buttons))
 
+# --- Инициализация
 @app.on_event("startup")
 async def startup():
     global app_state_ready
@@ -217,6 +437,7 @@ async def startup():
     except Exception as e:
         logger.error(f"[startup] Ошибка при инициализации: {e}\n{traceback.format_exc()}")
 
+# --- Webhook
 @app.post("/webhook")
 async def telegram_webhook(request: Request):
     try:
@@ -231,6 +452,7 @@ async def telegram_webhook(request: Request):
         logger.error(f"[webhook] Ошибка: {e}\n{traceback.format_exc()}")
         return {"ok": False, "error": str(e)}
 
+# --- Запуск
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run("main:app", host="0.0.0.0", port=8080)

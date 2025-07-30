@@ -1,160 +1,167 @@
-async def generate_care_card(latin_name: str) -> str:
-    import html
-    import json
-    from pathlib import Path
-    from loguru import logger
-
-    from faiss_search import get_chunks_by_latin_name
-    from db import get_card_by_latin_name, save_card
-
-    # 1. Проверка кэша
-    data = await get_card_by_latin_name(latin_name)
-    if data:
-        return f"<pre>{html.escape(data.get('text', '')[:3000])}</pre>"
-
-    # 2. Загрузка мапа латинских имён
-    LATIN_MAP_PATH = Path("latin_name_map.json")
-    latin_name_map = json.loads(LATIN_MAP_PATH.read_text(encoding="utf-8"))
-
-    def resolve_latin_name(query: str) -> str:
-        query = query.lower()
-        for fname, canon in latin_name_map.items():
-            canon_l = canon.lower()
-            if query in canon_l or canon_l in query:
-                return canon
-        return query
-
-    latin_query = resolve_latin_name(latin_name)
-
-    # 3. Поиск чанков
-    raw_chunks = get_chunks_by_latin_name(latin_query, top_k=10)
-    chunks = [ch for ch in raw_chunks if latin_query.lower() in ch["latin_name"].lower()]
-    if not chunks:
-        chunks = raw_chunks[:5]
-
-    logger.debug(f"[generate_care_card] Чанков найдено: {len(chunks)}")
-
-    if not chunks:
-        return f"❌ Не найдено информации по: {latin_name}"
-
-    # 4. Промт
-    prompt_text = f"""Ты — специалист по уходу за растениями.
-Составь структурированную карточку ухода на основе текста ниже.
-
-Название растения: {latin_name}
-
-Фрагменты:
-{chr(10).join(f'- {ch["content"]}' for ch in chunks)}
-
-Собери карточку для Telegram. Без источников. Без воды. Структурируй по смыслу:
-🌿 Название:
-{latin_name}
-
-🧬 Семейство:
-...
-
-📂 Категория:
-...
-
-💡 Свет:
-...
-
-💧 Полив:
-...
-
-🌡 Температура:
-...
-
-💨 Влажность:
-...
-
-🍽 Удобрения:
-...
-
-🌱 Почва:
-...
-
-♻ Пересадка:
-...
-
-🧬 Размножение:
-...
-
-⭐ Особенности:
-...
-
-Правила:
-- Используй только факты из фрагментов. Не выдумывай.
-- Если блока нет — пиши: "Информация отсутствует."
-- Не меняй порядок блоков.
-- Эмодзи — только в заголовках.
-- Без вводных ("рекомендуется", "следует", "важно").
-"""
-
-    # 5. GPT
-    try:
-        completion = await openai_client.chat.completions.create(
-            model="gpt-4-turbo",
-            messages=[{"role": "user", "content": prompt_text}],
-            max_tokens=1500,
-            temperature=0.3
-        )
-        gpt_raw = completion.choices[0].message.content.strip()
-        gpt_raw = gpt_raw.replace("**", "").replace("__", "")
-    except Exception as e:
-        logger.error(f"[generate_care_card] GPT ошибка: {e}")
-        return f"<b>Ошибка генерации:</b>\n\n<pre>{html.escape(str(e))}</pre>"
-
-    # 6. Сохранение
-    await save_card({
-        "latin_name": latin_name,
-        "text": gpt_raw
-    })
-
-    return f"<pre>{html.escape(gpt_raw[:3000])}</pre>"
-import requests
-import base64
 import os
-from loguru import logger
+import logging
+import aiohttp
+import requests
+from urllib.parse import urlparse
 
-async def identify_plant(photo_path: str) -> dict | None:
-    """Определение растения по фото через Plant.id"""
-    import requests
-    import base64
-    import os
+PLANT_ID_API_KEY = os.getenv("PLANT_ID_API_KEY")
+SERPAPI_KEY = os.getenv("SERPAPI_KEY")
+logger = logging.getLogger(__name__)
 
-    from loguru import logger
+HEADERS = {
+    "Content-Type": "application/json",
+    "Api-Key": PLANT_ID_API_KEY
+}
+
+
+async def identify_plant(image_path: str) -> dict:
+    try:
+        with open(image_path, "rb") as image_file:
+            image_data = image_file.read()
+    except Exception as e:
+        logger.error(f"[identify_plant] Ошибка при чтении файла {image_path}: {e}")
+        return {"error": f"Ошибка при чтении файла: {str(e)}"}
 
     url = "https://api.plant.id/v2/identify"
-    api_key = os.getenv("PLANT_ID_API_KEY")
-    if not api_key:
-        logger.error("[identify_plant] Переменная PLANT_ID_API_KEY не задана!")
-        return None
-
-    with open(photo_path, "rb") as f:
-        image_bytes = f.read()
-
-    headers = {
-        "Content-Type": "application/json",
-        "Api-Key": api_key
-    }
     payload = {
-        "images": [f"data:image/jpeg;base64,{base64.b64encode(image_bytes).decode()}"],
-        "organs": ["leaf", "flower", "fruit", "bark"],
-        "similar_images": False
+        "images": [image_data.decode("latin1")],
+        "modifiers": ["similar_images"],
+        "plant_language": "ru",
+        "plant_details": ["common_names", "url", "name_authority", "wiki_description", "taxonomy"]
     }
 
     try:
-        response = requests.post(url, json=payload, headers=headers, timeout=20)
-
-        if response.status_code != 200:
-            logger.error(f"[identify_plant] Bad status {response.status_code}: {response.text}")
-            return None
-
-        result = response.json()
-        return result
-
+        async with aiohttp.ClientSession() as session:
+            async with session.post(url, headers=HEADERS, json=payload) as resp:
+                if resp.status != 200:
+                    logger.error(f"[identify_plant] API ответ {resp.status}: {await resp.text()}")
+                    return {"error": f"Plant.id API ответ {resp.status}"}
+                return await resp.json()
     except Exception as e:
-        logger.error(f"[identify_plant] Ошибка: {e}")
-        return None
+        logger.error(f"[identify_plant] Ошибка запроса к Plant.id: {e}")
+        return {"error": f"Ошибка Plant.id: {str(e)}"}
 
+
+# --- PostgreSQL connection pool
+import asyncpg
+
+DATABASE_URL = os.getenv("DATABASE_URL")
+parsed = urlparse(DATABASE_URL) if DATABASE_URL else None
+
+PG_USER = parsed.username if parsed else None
+PG_PASSWORD = parsed.password if parsed else None
+PG_HOST = parsed.hostname if parsed else None
+PG_PORT = parsed.port if parsed else None
+PG_DB = parsed.path[1:] if parsed and parsed.path.startswith('/') else None
+
+_pool = None
+
+async def get_pool():
+    """Return a cached asyncpg connection pool."""
+    global _pool
+    if _pool is None:
+        _pool = await asyncpg.create_pool(
+            host=PG_HOST,
+            port=PG_PORT,
+            user=PG_USER,
+            password=PG_PASSWORD,
+            database=PG_DB,
+        )
+    return _pool
+
+
+async def get_card_by_latin_name(latin_name: str) -> dict | None:
+    """Fetch care card by latin name from PostgreSQL."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        row = await conn.fetchrow(
+            "SELECT latin_name, text FROM gpt_cards WHERE latin_name=$1",
+            latin_name,
+        )
+        return dict(row) if row else None
+
+
+async def save_card(data: dict):
+    """Insert or update care card in PostgreSQL."""
+    pool = await get_pool()
+    async with pool.acquire() as conn:
+        query = """
+        INSERT INTO gpt_cards (latin_name, text)
+        VALUES ($1, $2)
+        ON CONFLICT (latin_name) DO UPDATE
+        SET text = EXCLUDED.text
+        """
+        await conn.execute(query, data.get("latin_name"), data.get("text"))
+
+
+# --- SerpAPI integration
+def get_snippets_from_serpapi(query: str) -> list[str]:
+    params = {
+        "q": query,
+        "engine": "google",
+        "hl": "ru",
+        "gl": "ru",
+        "num": 10,
+        "api_key": os.getenv("SERPAPI_KEY"),
+    }
+
+    try:
+        response = requests.get("https://serpapi.com/search", params=params)
+        data = response.json()
+        return [
+            result["snippet"]
+            for result in data.get("organic_results", [])
+            if "snippet" in result
+        ]
+    except Exception as e:
+        logger.error(f"[SerpAPI] Ошибка: {e}")
+        return []
+
+
+# --- Расширение под смешанные сниппеты
+
+RU_PLANT_SOURCES = [
+    "stroy-podskazka.ru",
+    "floristics.info",
+    "wiki-dacha.ru",
+    "rastenia.info",
+    "dzengarden.ru",
+    "shop.pitomnik-sochi.ru"
+]
+
+def build_ru_query(ru_name: str) -> str:
+    base = f"{ru_name} уход"
+    sites = " OR ".join(f"site:{s}" for s in RU_PLANT_SOURCES)
+    return f"{base} {sites}"
+
+def build_en_query(latin_name: str) -> str:
+    return f"{latin_name} site:en.wikipedia.org OR site:wikipedia.org"
+
+def filter_snippets(snippets: list[str]) -> list[str]:
+    keywords = ["light", "sun", "shade", "soil", "water", "prune", "maintenance", "fertilizer", "temperature", "care", "уход", "полив", "пересадка"]
+    return [s for s in snippets if any(k in s.lower() for k in keywords)]
+
+async def get_combined_snippets(latin_name: str, ru_name: str) -> list[str]:
+    q_ru = build_ru_query(ru_name)
+    q_en = build_en_query(latin_name)
+
+    snippets_ru = get_snippets_from_serpapi(q_ru)
+    snippets_en = get_snippets_from_serpapi(q_en)
+
+    clean_ru = filter_snippets(snippets_ru)
+    clean_en = filter_snippets(snippets_en)
+
+    return clean_ru + clean_en
+
+PLANT_NAME_MAP = {
+    "Euonymus alatus": "Бересклет крылатый",
+    "Ficus elastica": "Фикус эластика",
+    "Sansevieria trifasciata": "Сансевиерия трёхполосная",
+    "Zamioculcas zamiifolia": "Замиокулькас",
+    "Hibiscus rosa-sinensis": "Гибискус китайский",
+    "Aloe vera": "Алоэ вера",
+    # дополняй
+}
+
+def map_latin_to_russian(latin_name: str) -> str:
+    return PLANT_NAME_MAP.get(latin_name, latin_name)
