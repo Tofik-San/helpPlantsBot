@@ -155,12 +155,40 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 # --- Обработка кнопки ухода
+from telegram.error import BadRequest
+import time
+
 async def handle_care_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
-    await query.answer()
     latin_name = query.data.split(":", 1)[1]
-    result = await generate_care_card(latin_name)
-    await query.message.reply_text(result, parse_mode="HTML")
+
+    # ⏱ Старт таймера
+    start_time = time.time()
+
+    try:
+        result = await generate_care_card(latin_name)
+    except Exception as e:
+        logger.error(f"[handle_care_button] Ошибка генерации карточки: {e}\n{traceback.format_exc()}")
+        await query.message.reply_text("❌ Ошибка при генерации карточки ухода.", parse_mode="HTML")
+        return
+
+    # 🕒 Пытаемся ответить на query
+    try:
+        await query.answer()
+    except BadRequest as e:
+        if "query is too old" in str(e).lower():
+            logger.warning(f"[handle_care_button] Просроченный callback: {e}")
+        else:
+            raise
+
+    # 🧾 Ответ пользователю
+    if not result:
+        await query.message.reply_text("❌ Не удалось сформировать карточку ухода.", parse_mode="HTML")
+    else:
+        await query.message.reply_text(result, parse_mode="HTML")
+
+    logger.info(f"[handle_care_button] Время генерации: {time.time() - start_time:.2f} сек.")
+
 
 # --- Обработка кнопок меню
 async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
