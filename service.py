@@ -112,3 +112,37 @@ async def generate_care_card(latin_name: str) -> str:
     })
 
     return f"<pre>{html.escape(gpt_raw[:3000])}</pre>"
+import requests
+import base64
+import os
+from loguru import logger
+
+async def identify_plant(photo_path: str) -> str | None:
+    """Определение растения по фото через Plant.id"""
+    url = "https://api.plant.id/v2/identify"
+    api_key = os.getenv("PLANT_ID_API_KEY")
+
+    with open(photo_path, "rb") as f:
+        image_bytes = f.read()
+
+    headers = {"Content-Type": "application/json"}
+    payload = {
+        "images": [f"data:image/jpeg;base64,{base64.b64encode(image_bytes).decode()}"],
+        "organs": ["leaf", "flower", "fruit", "bark"],
+        "similar_images": False
+    }
+
+    try:
+        response = requests.post(url, json=payload, headers=headers, timeout=20, auth=(api_key, ""))
+        result = response.json()
+
+        suggestions = result.get("suggestions", [])
+        if not suggestions:
+            return None
+
+        best = suggestions[0]
+        plant_name = best.get("plant_name", "")
+        return plant_name
+    except Exception as e:
+        logger.error(f"[identify_plant] Ошибка: {e}")
+        return None
