@@ -69,44 +69,58 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 # --- Обработка фото
+# --- Обработка фото
 async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
     try:
         user_id = update.effective_user.id
         now = datetime.utcnow()
 
+        # --- Защита от альбомов
         if update.message.media_group_id:
             await update.message.reply_text("📸 Отправьте, пожалуйста, только одно фото за раз.", parse_mode="HTML")
             return
 
+        # --- Антиспам 15 сек
         last_time = user_last_request.get(user_id)
         if last_time and (now - last_time).total_seconds() < 15:
             await update.message.reply_text("⏱ Подождите 15 секунд перед новой попыткой.", parse_mode="HTML")
             return
         user_last_request[user_id] = now
 
+        # --- Ограничение размера фото
         photo = update.message.photo[-1]
         if photo.file_size and photo.file_size > 5 * 1024 * 1024:
             await update.message.reply_text("❌ Фото слишком большое. Попробуйте другое.", parse_mode="HTML")
             return
 
+        # --- Скачивание фото
         file = await context.bot.get_file(photo.file_id)
         temp_path = "temp/plant.jpg"
         await file.download_to_drive(custom_path=temp_path)
 
+        # --- Проверка формата изображения
         img_type = imghdr.what(temp_path)
         if img_type not in ("jpeg", "png"):
             await update.message.reply_text("❌ Не удалось распознать формат. Попробуйте другое фото.", parse_mode="HTML")
             return
 
+        # --- Лимит по пользователю
         if not await check_and_increment_limit(user_id):
             await update.message.reply_text("🚫 Лимит на сегодня исчерпан. Попробуйте завтра.", parse_mode="HTML")
             return
 
+        # --- Распознавание
         await update.message.reply_text("Распознаю растение…", parse_mode="HTML")
         result = await identify_plant(temp_path)
-        suggestions = result.get("suggestions", [])
 
+        if not result:
+            logger.warning(f"[handle_photo] identify_plant вернул None для user_id={user_id}")
+            await update.message.reply_text("❌ Не удалось распознать растение. Попробуйте другое фото.", parse_mode="HTML")
+            return
+
+        suggestions = result.get("suggestions", [])
         if not suggestions:
+            logger.warning(f"[handle_photo] Пустой suggestions. Full result: {result}")
             await update.message.reply_text("❌ Не удалось распознать растение.", parse_mode="HTML")
             return
 
@@ -137,7 +151,8 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     except Exception as e:
         logger.error(f"[handle_photo] Ошибка: {e}\n{traceback.format_exc()}")
-        await update.message.reply_text("Ошибка при распознавании растения.", parse_mode="HTML")
+        await update.message.reply_text("🚫 Ошибка при распознавании растения. Попробуйте позже.", parse_mode="HTML")
+
 
 # --- Обработка кнопки ухода
 async def handle_care_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
