@@ -237,15 +237,21 @@ async def get_care_card_html(latin_name: str) -> str | None:
     from loguru import logger
     from faiss_search import get_chunks_by_latin_name
     from service import get_card_by_latin_name, save_card
+    from latin_name_map import latin_name_map
 
     try:
+        # 0. Преобразование имени
+        logger.debug(f"[RAG] Входящий латин: {latin_name}")
+        mapped_name = latin_name_map.get(latin_name, latin_name)
+        logger.debug(f"[RAG] После мапы: {mapped_name}")
+
         # 1. Проверка в БД
-        data = await get_card_by_latin_name(latin_name)
+        data = await get_card_by_latin_name(mapped_name)
         if data:
             return f"<pre>{html.escape(data.get('text', '')[:3000])}</pre>"
 
         # 2. Поиск через FAISS
-        chunks = get_chunks_by_latin_name(latin_name)
+        chunks = get_chunks_by_latin_name(mapped_name)
         if not chunks:
             return f"❌ Не найдено информации по: {latin_name}"
 
@@ -304,27 +310,24 @@ async def get_care_card_html(latin_name: str) -> str | None:
 """
 
         # 4. Вызов GPT
+        from service import openai_client
         logger.info("[GPT] Отправка запроса...")
         logger.debug(f"[GPT] PROMPT:\n{prompt_text}")
 
-        try:
-            completion = await openai_client.chat.completions.create(
-                model="gpt-4-turbo",
-                messages=[{"role": "user", "content": prompt_text}],
-                max_tokens=1500,
-                temperature=0.3
-            )
-            gpt_raw = completion.choices[0].message.content
-        except Exception as e:
-            logger.error(f"[GPT] Ошибка вызова: {e}")
-            raise
+        completion = await openai_client.chat.completions.create(
+            model="gpt-4-turbo",
+            messages=[{"role": "user", "content": prompt_text}],
+            max_tokens=1500,
+            temperature=0.3
+        )
 
+        gpt_raw = completion.choices[0].message.content
         logger.info("[GPT] Ответ получен.")
         logger.debug(f"[GPT] RAW:\n{gpt_raw}")
 
         # 5. Сохранение в БД
         await save_card({
-            "latin_name": latin_name,
+            "latin_name": mapped_name,
             "text": gpt_raw
         })
 
