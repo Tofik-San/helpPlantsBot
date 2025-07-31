@@ -251,19 +251,51 @@ async def get_care_card_html(latin_name: str) -> str | None:
 Название растения: {latin_name}
 
 Фрагменты:
-{chr(10).join(f'- {s}' for s in chunks)}
+{chr(10).join(f'- {ch["content"]}' for ch in chunks)}
 
 Собери карточку для Telegram. Без источников. Без воды. Структурируй по смыслу:
-– Свет
-– Полив
-– Температура
-– Влажность
-– Удобрения
-– Почва
-– Пересадка
-– Размножение
-– Особенности
-Если блоков не хватает — просто пропусти.
+🌿 Название:
+{latin_name}
+
+🧬 Семейство:
+...
+
+📂 Категория:
+...
+
+💡 Свет:
+...
+
+💧 Полив:
+...
+
+🌡 Температура:
+...
+
+💨 Влажность:
+...
+
+🍽 Удобрения:
+...
+
+🌱 Почва:
+...
+
+♻ Пересадка:
+...
+
+🧬 Размножение:
+...
+
+⭐ Особенности:
+...
+
+Правила:
+- Используй только факты из фрагментов. Не выдумывай.
+- Если блока нет — пиши: "Информация отсутствует."
+- Не меняй порядок блоков.
+- Эмодзи — только в заголовках.
+- Без вводных ("рекомендуется", "следует", "важно").
 """
 
         # 4. Вызов GPT
@@ -290,29 +322,42 @@ async def get_care_card_html(latin_name: str) -> str | None:
         return f"<b>Ошибка обработки карточки:</b>\n\n<pre>{html.escape(str(e))}</pre>"
 
 async def handle_care_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    """Handle care button callbacks."""
     query = update.callback_query
-    await query.answer()
-    latin_name = query.data.split(":", 1)[1]
-    result = await get_care_card_html(latin_name)
-    if result is None:
+
+    try:
+        await query.answer()  # 👈 строго первым
+    except Exception as e:
+        logger.warning(f"[handle_care_button] query.answer() fail: {e}")
+
+    try:
+        latin_name = query.data.split(":", 1)[1]
+        result = await get_care_card_html(latin_name)
+
+        if result is None:
+            await query.message.reply_text(
+                "❌ Ошибка при получении карточки ухода.",
+                parse_mode="HTML",
+            )
+        elif isinstance(result, dict):
+            msg = "❌ Ошибка при получении карточки ухода."
+            if DEBUG_GPT and result.get("raw"):
+                msg += f"\n\nRAW:\n{result['raw']}"
+            await query.message.reply_text(
+                msg,
+                parse_mode="HTML",
+            )
+        else:
+            await query.message.reply_text(
+                result,
+                parse_mode="HTML",
+            )
+    except Exception as e:
+        logger.error(f"[handle_care_button] Ошибка генерации карточки: {e}")
         await query.message.reply_text(
-            "❌ Ошибка при получении карточки ухода.",
+            f"❌ Не удалось сформировать карточку.\n\n{e}",
             parse_mode="HTML",
         )
-    elif isinstance(result, dict):
-        msg = "❌ Ошибка при получении карточки ухода."
-        if DEBUG_GPT and result.get("raw"):
-            msg += f"\n\nRAW:\n{result['raw']}"
-        await query.message.reply_text(
-            msg,
-            parse_mode="HTML",
-        )
-    else:
-        await query.message.reply_text(
-            result,
-            parse_mode="HTML",
-        )
+
 
 # --- Обработка текстовых кнопок
 async def handle_buttons(update: Update, context: ContextTypes.DEFAULT_TYPE):
