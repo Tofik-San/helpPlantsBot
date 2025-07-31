@@ -12,7 +12,11 @@ from telegram import (
     KeyboardButton,
     InlineKeyboardButton,
     InlineKeyboardMarkup,
-)
+import json
+
+with open(os.path.join(os.path.dirname(__file__), "latin_name_map.json"), encoding="utf-8") as f:
+    latin_name_map = json.load(f)
+
 from telegram.ext import (
     Application, CommandHandler, MessageHandler, CallbackQueryHandler,
     ContextTypes, filters
