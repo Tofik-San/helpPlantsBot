@@ -11,7 +11,7 @@ from telegram import (
     ReplyKeyboardMarkup,
     KeyboardButton,
     InlineKeyboardButton,
-    InlineKeyboardMarkup,
+    InlineKeyboardMarkup,)
 import json
 
 with open(os.path.join(os.path.dirname(__file__), "latin_name_map.json"), encoding="utf-8") as f:
