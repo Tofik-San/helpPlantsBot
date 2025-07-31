@@ -230,6 +230,7 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 # BLOCK 5: обработка карточки ухода через PostgreSQL и GPT-4
+# BLOCK 5: обработка карточки ухода через PostgreSQL и GPT-4
 async def get_care_card_html(latin_name: str) -> str | None:
     """RAG: Поиск чанков ухода по FAISS и генерация карточки GPT."""
     import html
@@ -303,24 +304,23 @@ async def get_care_card_html(latin_name: str) -> str | None:
 """
 
         # 4. Вызов GPT
-        # 4. Вызов GPT
-logger.info("[GPT] Отправка запроса...")
-logger.debug(f"[GPT] PROMPT:\n{prompt_text}")
+        logger.info("[GPT] Отправка запроса...")
+        logger.debug(f"[GPT] PROMPT:\n{prompt_text}")
 
-try:
-    completion = await openai_client.chat.completions.create(
-        model="gpt-4-turbo",
-        messages=[{"role": "user", "content": prompt_text}],
-        max_tokens=1500,
-        temperature=0.3
-    )
-except Exception as e:
-    logger.error(f"[GPT] Ошибка вызова: {e}")
-    raise
+        try:
+            completion = await openai_client.chat.completions.create(
+                model="gpt-4-turbo",
+                messages=[{"role": "user", "content": prompt_text}],
+                max_tokens=1500,
+                temperature=0.3
+            )
+            gpt_raw = completion.choices[0].message.content
+        except Exception as e:
+            logger.error(f"[GPT] Ошибка вызова: {e}")
+            raise
 
-logger.info("[GPT] Ответ получен.")
-logger.debug(f"[GPT] RAW:\n{completion}")
-
+        logger.info("[GPT] Ответ получен.")
+        logger.debug(f"[GPT] RAW:\n{gpt_raw}")
 
         # 5. Сохранение в БД
         await save_card({
