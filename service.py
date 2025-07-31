@@ -13,7 +13,6 @@ from pathlib import Path
 import json
 import html
 from faiss_search import get_chunks_by_latin_name
-from db import get_card_by_latin_name, save_card
 
 
 async def generate_care_card(latin_name: str) -> str:
