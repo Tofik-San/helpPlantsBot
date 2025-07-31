@@ -1,3 +1,4 @@
+from openai import AsyncOpenAI
 import os
 import logging
 import traceback
