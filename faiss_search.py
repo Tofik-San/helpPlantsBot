@@ -21,12 +21,13 @@ model = SentenceTransformer("paraphrase-multilingual-mpnet-base-v2")
 
 def get_chunks_by_latin_name(latin_name: str, top_k: int = 7) -> list[dict]:
     """Ищет наиболее релевантные чанки по латинскому названию"""
-    query_vector = model.encode([latin_name], convert_to_numpy=True).astype("float32")
+    query = f"{latin_name} уход содержание размножение"
+    query_vector = model.encode([query], convert_to_numpy=True).astype("float32")
     D, I = index.search(query_vector, top_k)
 
     results = []
     for i in I[0]:
         if i < len(db):
-            results.append(db[i])  # каждый — dict с content, latin_name и прочим
-
+            results.append(db[i])
     return results
+
