@@ -26,6 +26,9 @@ TOKEN = os.getenv("BOT_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 PLANT_ID_API_KEY = os.getenv("PLANT_ID_API_KEY")
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+if not OPENAI_API_KEY or not OPENAI_API_KEY.startswith("sk-"):
+    raise RuntimeError("❌ OPENAI_API_KEY не установлен или невалиден.")
+
 
 openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
 DEBUG_GPT = os.getenv("DEBUG_GPT") == "1"
