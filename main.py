@@ -467,7 +467,7 @@ https://t.me/BOTanikPlants
 # --- Хендлеры
 application.add_handler(CommandHandler("start", start))
 application.add_handler(MessageHandler(filters.PHOTO, handle_photo))
-application.add_handler(CallbackQueryHandler(handle_care_button))
+application.add_handler(CallbackQueryHandler(handle_care_button, pattern="^care:"))
 application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_buttons))
 
 # --- Инициализация
