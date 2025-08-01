@@ -54,13 +54,22 @@ def _build_queries(latin_name: str):
     queries = [f"{q} уход содержание полив свет температура влажность размножение почва" for q in variants]
     return queries, rank, genus
 
-def get_chunks_by_latin_name(latin_name: str, top_k: int = 7) -> list[dict]:
-    """Ищет релевантные чанки. Приоритет: species > genus. Возвращает чанки с полями 'score' и 'match'."""
+def get_chunks_by_latin_name(latin_name: str, top_k: int = 7, mode: str = "species") -> list[dict]:
+    """
+    Ищет релевантные чанки по виду (по умолчанию) или по роду (mode='genus').
+    Ввод: latin_name (вид или род).
+    Вывод: список чанков с полями 'score' и 'match' (species/genus/none).
+    """
     index = _load_index()
     db = _load_db()
     model = _load_model()
 
-    queries, input_rank, genus = _build_queries(latin_name)
+    # Sanity: индекс и мета должны совпадать по размеру
+    if index.ntotal != len(db):
+        raise RuntimeError(f"FAISS/meta mismatch: index.ntotal={index.ntotal} != len(meta)={len(db)}")
+
+    # Подготовка запросов
+    queries, input_rank, input_genus = _build_queries(latin_name)
     q_vecs = model.encode(queries, convert_to_numpy=True).astype("float32")
 
     # Overfetch: берём больше, чем top_k, чтобы отфильтровать/пересортировать
@@ -68,21 +77,33 @@ def get_chunks_by_latin_name(latin_name: str, top_k: int = 7) -> list[dict]:
     D, I = index.search(q_vecs, over_k)
 
     seen, results = set(), []
+    dropped = 0
     species_key = _strip_authors(latin_name).lower()
+    genus = input_genus.lower()
 
     for row_d, row_i in zip(D, I):
         for score, idx in zip(row_d.tolist(), row_i.tolist()):
-            if idx >= len(db) or idx in seen:
+            if idx >= len(db):
+                dropped += 1
                 continue
+            if idx in seen:
+                continue
+
             item = dict(db[idx])  # копия
             ln = (item.get("latin_name") or "").lower()
+
+            # Если ищем по роду — жёстко фильтруем только этот род
+            if mode == "genus" and not ln.startswith(genus):
+                continue
+
             # Метка совпадения
             if species_key and species_key in ln:
                 match = "species"
-            elif genus.lower() in ln:
+            elif genus and ln.startswith(genus):
                 match = "genus"
             else:
                 match = "none"
+
             item["score"] = float(score)
             item["match"] = match
             results.append(item)
@@ -90,4 +111,12 @@ def get_chunks_by_latin_name(latin_name: str, top_k: int = 7) -> list[dict]:
 
     # Приоритизация: species → genus → по score
     results.sort(key=lambda x: (x["match"] == "species", x["match"] == "genus", x["score"]), reverse=True)
+
+    # Диагностический лог (оставь, если у тебя есть logger)
+    try:
+        import logging as _lg
+        _lg.getLogger("faiss").debug(f"[FAISS] dropped={dropped} kept={len(results)} mode={mode} q='{latin_name}'")
+    except Exception:
+        pass
+
     return results[:top_k]

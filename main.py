@@ -236,36 +236,54 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
 # BLOCK 5: обработка карточки ухода через PostgreSQL и GPT-4
 # BLOCK 5: обработка карточки ухода через PostgreSQL и GPT-4
 async def get_care_card_html(latin_name: str) -> str | None:
-    """RAG: Поиск чанков ухода по FAISS и генерация карточки GPT."""
+    """RAG: Поиск чанков ухода по FAISS и генерация карточки GPT (с нормализацией и fallback по роду)."""
     import html
     from loguru import logger
     from faiss_search import get_chunks_by_latin_name
     from service import get_card_by_latin_name, save_card
 
+    def normalize_taxon(s: str) -> str:
+        x = " ".join((s or "").split()).strip().lower()
+        # частые опечатки и варианты
+        x = x.replace("agalonema", "aglaonema")
+        return x
+
     try:
-        # 0. Преобразование имени
+        # 0) Нормализация и мапа, не теряем вид
         logger.debug(f"[RAG] Входящий латин: {latin_name}")
-        mapped_name = latin_name_map.get(latin_name, latin_name)
+        norm = normalize_taxon(latin_name)
+        mapped = latin_name_map.get(norm) or latin_name_map.get(latin_name)
+        if mapped and (" " not in mapped) and (" " in latin_name):
+            mapped_name = latin_name  # мапа вернула только род — сохраняем вид
+        else:
+            mapped_name = mapped or latin_name
+        logger.debug(f"[RAG] После нормализации: {norm}")
         logger.debug(f"[RAG] После мапы: {mapped_name}")
 
-        # 1. Проверка в БД
+        # 1) Кэш/БД по точному названию
         data = await get_card_by_latin_name(mapped_name)
         if data:
             return f"<pre>{html.escape(data.get('text', '')[:3000])}</pre>"
 
-        # 2. Поиск через FAISS
-        chunks = get_chunks_by_latin_name(mapped_name)
+        # 2) Поиск через FAISS (вид → затем род)
+        chunks = get_chunks_by_latin_name(mapped_name, top_k=7)
+        if not chunks:
+            genus = (mapped_name.split()[0] if mapped_name else "")
+            if genus:
+                chunks = get_chunks_by_latin_name(genus, top_k=7, mode="genus")
         if not chunks:
             return f"❌ Не найдено информации по: {latin_name}"
 
-        # 3. Сборка prompt
+        logger.info(f"[RAG] chunks={len(chunks)} key='{mapped_name}' first='{chunks[0].get('latin_name','-')}'")
+
+        # 3) Сборка prompt
         prompt_text = f"""Ты — специалист по уходу за растениями.
 Составь структурированную карточку ухода на основе текста ниже.
 
 Название растения: {latin_name}
 
 Фрагменты:
-{chr(10).join(f'- {ch["content"]}' for ch in chunks)}
+{chr(10).join(f'- {ch.get("content","")}' for ch in chunks)}
 
 Собери карточку для Telegram. Без источников. Без воды. Структурируй по смыслу:
 🌿 Название:
@@ -312,7 +330,7 @@ async def get_care_card_html(latin_name: str) -> str | None:
 - Без вводных ("рекомендуется", "следует", "важно").
 """
 
-        # 4. Вызов GPT
+        # 4) Вызов GPT
         from service import openai_client
         logger.info("[GPT] Отправка запроса...")
         logger.debug(f"[GPT] PROMPT:\n{prompt_text}")
@@ -328,11 +346,8 @@ async def get_care_card_html(latin_name: str) -> str | None:
         logger.info("[GPT] Ответ получен.")
         logger.debug(f"[GPT] RAW:\n{gpt_raw}")
 
-        # 5. Сохранение в БД
-        await save_card({
-            "latin_name": mapped_name,
-            "text": gpt_raw
-        })
+        # 5) Сохранение в БД
+        await save_card({"latin_name": mapped_name, "text": gpt_raw})
 
         return f"<pre>{html.escape(gpt_raw[:3000])}</pre>"
 
