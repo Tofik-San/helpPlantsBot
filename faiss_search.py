@@ -1,33 +1,93 @@
+# faiss_search.py — усиленная версия без смены сигнатуры
 import faiss
 import pickle
 import numpy as np
+import re
+from functools import lru_cache
 from sentence_transformers import SentenceTransformer
 from pathlib import Path
 
-# Пути к индексам
 INDEX_PATH = Path("faiss_index.bin")
 META_PATH = Path("faiss_metadata.pkl")
 
-# Загрузка FAISS-индекса
-index = faiss.read_index(str(INDEX_PATH))
+# Lazy load
+@lru_cache(maxsize=1)
+def _load_index():
+    return faiss.read_index(str(INDEX_PATH))
 
-# Загрузка метаданных
-with META_PATH.open("rb") as f:
-    db = pickle.load(f)  # list[dict] с ключами: content, latin_name, section, category_type
+@lru_cache(maxsize=1)
+def _load_db():
+    with META_PATH.open("rb") as f:
+        return pickle.load(f)  # list[dict]: content, latin_name, section, category_type
 
-# Загрузка модели
-model = SentenceTransformer("paraphrase-multilingual-mpnet-base-v2")
+@lru_cache(maxsize=1)
+def _load_model():
+    m = SentenceTransformer("paraphrase-multilingual-mpnet-base-v2")
+    return m
 
+_author_rx = re.compile(r"\b([A-Z][a-z]+|[A-Z]\.|[A-Z][a-z]+\.)$")
+def _strip_authors(name: str) -> str:
+    # грубо: убираем концовки-авторы и интраранговые пометки
+    name = re.sub(r"\s+(var\.|subsp\.|ssp\.)\s+\w+", "", name)
+    parts = name.split()
+    if len(parts) >= 3 and _author_rx.search(parts[-1]):
+        parts = parts[:-1]
+    return " ".join(parts).strip()
+
+def _detect_rank(name: str) -> str:
+    return "species" if len(name.split()) >= 2 else "genus"
+
+def _build_queries(latin_name: str):
+    rank = _detect_rank(latin_name)
+    genus = latin_name.split()[0]
+    variants = []
+    if rank == "species":
+        stripped = _strip_authors(latin_name)
+        if stripped != latin_name:
+            variants.append(stripped)
+        variants.append(latin_name)
+        # genus fallback последним
+        variants.append(genus)
+    else:
+        variants.append(genus)
+    # обогащение русскими терминами ухода
+    queries = [f"{q} уход содержание полив свет температура влажность размножение почва" for q in variants]
+    return queries, rank, genus
 
 def get_chunks_by_latin_name(latin_name: str, top_k: int = 7) -> list[dict]:
-    """Ищет наиболее релевантные чанки по латинскому названию"""
-    query = f"{latin_name} уход содержание размножение"
-    query_vector = model.encode([query], convert_to_numpy=True).astype("float32")
-    D, I = index.search(query_vector, top_k)
+    """Ищет релевантные чанки. Приоритет: species > genus. Возвращает чанки с полями 'score' и 'match'."""
+    index = _load_index()
+    db = _load_db()
+    model = _load_model()
 
-    results = []
-    for i in I[0]:
-        if i < len(db):
-            results.append(db[i])
-    return results
+    queries, input_rank, genus = _build_queries(latin_name)
+    q_vecs = model.encode(queries, convert_to_numpy=True).astype("float32")
 
+    # Overfetch: берём больше, чем top_k, чтобы отфильтровать/пересортировать
+    over_k = max(top_k * 3, 20)
+    D, I = index.search(q_vecs, over_k)
+
+    seen, results = set(), []
+    species_key = _strip_authors(latin_name).lower()
+
+    for row_d, row_i in zip(D, I):
+        for score, idx in zip(row_d.tolist(), row_i.tolist()):
+            if idx >= len(db) or idx in seen:
+                continue
+            item = dict(db[idx])  # копия
+            ln = (item.get("latin_name") or "").lower()
+            # Метка совпадения
+            if species_key and species_key in ln:
+                match = "species"
+            elif genus.lower() in ln:
+                match = "genus"
+            else:
+                match = "none"
+            item["score"] = float(score)
+            item["match"] = match
+            results.append(item)
+            seen.add(idx)
+
+    # Приоритизация: species → genus → по score
+    results.sort(key=lambda x: (x["match"] == "species", x["match"] == "genus", x["score"]), reverse=True)
+    return results[:top_k]
