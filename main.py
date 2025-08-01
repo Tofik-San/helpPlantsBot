@@ -331,7 +331,6 @@ async def get_care_card_html(latin_name: str) -> str | None:
 """
 
         # 4) Вызов GPT
-        from service import openai_client
         logger.info("[GPT] Отправка запроса...")
         logger.debug(f"[GPT] PROMPT:\n{prompt_text}")
 

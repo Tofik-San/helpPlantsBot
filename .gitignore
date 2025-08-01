@@ -199,3 +199,7 @@ raw_pages/
 parser_chunks.py
 vectorize_chunks.py
 build_faiss_index.py
+
+# Разрешаем бинарники FAISS
+!faiss_index.bin
+!faiss_metadata.pkl
