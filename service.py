@@ -1,7 +1,6 @@
 # service.py
 import os
 import json
-import base64
 import logging
 import aiohttp
 from urllib.parse import urlparse
@@ -19,15 +18,14 @@ HEADERS = {
 # --- OpenAI / CTX / Retrieval / Render
 from openai import AsyncOpenAI
 from ctx_packet import make_ctx
-from faiss_search import get_chunks_by_latin_name  # filter_by_intent не нужен
+from faiss_search import get_chunks_by_latin_name  # filter_by_intent больше не нужен
 from card_formatter import render_html
 from schemas import Card
 
-# --- Константы пайплайна
 K = 12
 FACTS_USED = 6
 CLIP = 450
-TEMP = 0.0  # жёсткий детерминизм и экстрактивность
+TEMP = 0.2
 MODEL = os.getenv("MODEL", "gpt-4o-mini")
 client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
@@ -42,31 +40,21 @@ async def identify_plant(image_path: str) -> dict:
         logger.error(f"[identify_plant] Ошибка при чтении файла {image_path}: {e}")
         return {"error": f"Ошибка при чтении файла: {str(e)}"}
 
-    # ВАЖНО: Plant.id принимает base64-строки, не raw-байты/latin1
-    image_b64 = base64.b64encode(image_data).decode("ascii")
-
     url = "https://api.plant.id/v2/identify"
     payload = {
-        "images": [image_b64],
+        "images": [image_data.decode("latin1")],
         "modifiers": ["similar_images"],
         "plant_language": "ru",
         "plant_details": ["common_names", "url", "name_authority", "wiki_description", "taxonomy"]
     }
 
     try:
-        timeout = aiohttp.ClientTimeout(total=30)
-        async with aiohttp.ClientSession(timeout=timeout) as session:
+        async with aiohttp.ClientSession() as session:
             async with session.post(url, headers=HEADERS, json=payload) as resp:
-                body = await resp.text()
-                ct = resp.headers.get("content-type", "")
                 if resp.status != 200:
-                    logger.error(f"[identify_plant] status={resp.status} ct={ct} body[:200]={body[:200]}")
-                    # частые коды: 401/403 (ключ), 402 (квота), 429 (rate limit)
-                    return {"error": f"Plant.id API {resp.status}", "body": body[:200]}
-                if "application/json" not in ct:
-                    logger.error(f"[identify_plant] Non-JSON response ct={ct} body[:200]={body[:200]}")
-                    return {"error": "Plant.id non-json", "body": body[:200]}
-                return json.loads(body)
+                    logger.error(f"[identify_plant] API ответ {resp.status}: {await resp.text()}")
+                    return {"error": f"Plant.id API ответ {resp.status}"}
+                return await resp.json()
     except Exception as e:
         logger.error(f"[identify_plant] Ошибка запроса к Plant.id: {e}")
         return {"error": f"Ошибка Plant.id: {str(e)}"}
@@ -147,7 +135,7 @@ async def save_card_html(latin_name: str, intent: str, html: str, source: str = 
 PLANT_NAME_MAP = {
     "Euonymus alatus": "Бересклет крылатый",
     "Ficus elastica": "Фикус эластика",
-    "Sanseveria trifasciata": "Сансевиерия трёхполосная",
+    "Sansevieria trifasciata": "Сансевиерия трёхполосная",
     "Zamioculcas zamiifolia": "Замиокулькас",
     "Hibiscus rosa-sinensis": "Гибискус китайский",
     "Aloe vera": "Алоэ вера",
@@ -177,20 +165,11 @@ async def generate_card(latin_name: str, intent: str = "general", lang: str = "r
         # Без HTML-тегов — чтобы Telegram не ругался
         return "Недостаточно данных"
 
-    # 3) CTX + строгий формат (экстрактивность) — нумеруем факты
-    numbered = [f"[{i+1}] {t}" for i, t in enumerate(facts)]
+    # 3) CTX + строгий формат
     ctx = make_ctx(latin_name, intent, lang, outlen)
-    sys_msg = (
-        "You are an extractive writer. Use ONLY the provided FACTS. "
-        "Do not add or infer anything that is not explicitly in FACTS. "
-        "If a field cannot be filled strictly from FACTS, keep it short. "
-        "Keep original wording, prefer verbatim. "
-        "For each paragraph in blocks and each tip, append space+'[n]' "
-        "with the most relevant FACT index. "
-        "Return a single valid JSON object for schema card.v1. No extra text."
-    )
+    sys_msg = "Return a single valid JSON object for schema card.v1. No extra text."
     usr_msg = json.dumps(
-        {"CTX": ctx, "SCHEMA": Card.model_json_schema(), "FACTS": numbered},
+        {"CTX": ctx, "SCHEMA": Card.model_json_schema(), "FACTS": facts},
         ensure_ascii=False
     )
 
