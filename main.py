@@ -1,4 +1,5 @@
-from openai import AsyncOpenAI
+# main.py — интеграция CTX-карточки (FAISS → GPT(JSON) → HTML → Cache)
+
 import os
 import logging
 import traceback
@@ -11,8 +12,10 @@ from telegram import (
     ReplyKeyboardMarkup,
     KeyboardButton,
     InlineKeyboardButton,
-    InlineKeyboardMarkup,)
+    InlineKeyboardMarkup,
+)
 import json
+import httpx
 
 with open(os.path.join(os.path.dirname(__file__), "latin_name_map.json"), encoding="utf-8") as f:
     latin_name_map = json.load(f)
@@ -21,22 +24,13 @@ from telegram.ext import (
     Application, CommandHandler, MessageHandler, CallbackQueryHandler,
     ContextTypes, filters
 )
-from openai import AsyncOpenAI
-import httpx
 from limit_checker import check_and_increment_limit
-from service import get_card_by_latin_name, save_card
+from service import generate_card  # <-- CTX-пайплайн
 
 # --- Конфиги
 TOKEN = os.getenv("BOT_TOKEN")
 WEBHOOK_URL = os.getenv("WEBHOOK_URL")
 PLANT_ID_API_KEY = os.getenv("PLANT_ID_API_KEY")
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-if not OPENAI_API_KEY or not OPENAI_API_KEY.startswith("sk-"):
-    raise RuntimeError("❌ OPENAI_API_KEY не установлен или невалиден.")
-
-
-openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
-DEBUG_GPT = os.getenv("DEBUG_GPT") == "1"
 
 # --- Логирование
 logging.basicConfig(level=logging.INFO)
@@ -48,7 +42,7 @@ class _TokenFilter(logging.Filter):
         super().__init__()
         self.token = token or ""
 
-    def filter(self, record: logging.LogRecord) -> bool:  # pragma: no cover - simple sanitization
+    def filter(self, record: logging.LogRecord) -> bool:
         if self.token:
             token_mask = "<TOKEN>"
             record.msg = str(record.msg).replace(self.token, token_mask)
@@ -183,7 +177,8 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 json={
                     "images": [image_b64],
                     "organs": ["leaf", "flower"]
-                }
+                },
+                timeout=30
             )
 
         result = response.json()
@@ -233,157 +228,25 @@ async def handle_photo(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="HTML",
         )
 
-# BLOCK 5: обработка карточки ухода через PostgreSQL и GPT-4
-# BLOCK 5: обработка карточки ухода через PostgreSQL и GPT-4
-async def get_care_card_html(latin_name: str) -> str | None:
-    """RAG: Поиск чанков ухода по FAISS и генерация карточки GPT (с нормализацией и fallback по роду)."""
-    import html
-    from loguru import logger
-    from faiss_search import get_chunks_by_latin_name
-    from service import get_card_by_latin_name, save_card
-
-    def normalize_taxon(s: str) -> str:
-        x = " ".join((s or "").split()).strip().lower()
-        # частые опечатки и варианты
-        x = x.replace("agalonema", "aglaonema")
-        return x
-
-    try:
-        # 0) Нормализация и мапа, не теряем вид
-        logger.debug(f"[RAG] Входящий латин: {latin_name}")
-        norm = normalize_taxon(latin_name)
-        mapped = latin_name_map.get(norm) or latin_name_map.get(latin_name)
-        if mapped and (" " not in mapped) and (" " in latin_name):
-            mapped_name = latin_name  # мапа вернула только род — сохраняем вид
-        else:
-            mapped_name = mapped or latin_name
-        logger.debug(f"[RAG] После нормализации: {norm}")
-        logger.debug(f"[RAG] После мапы: {mapped_name}")
-
-        # 1) Кэш/БД по точному названию
-        data = await get_card_by_latin_name(mapped_name)
-        if data:
-            return f"<pre>{html.escape(data.get('text', '')[:3000])}</pre>"
-
-        # 2) Поиск через FAISS (вид → затем род)
-        chunks = get_chunks_by_latin_name(mapped_name, top_k=7)
-        if not chunks:
-            genus = (mapped_name.split()[0] if mapped_name else "")
-            if genus:
-                chunks = get_chunks_by_latin_name(genus, top_k=7, mode="genus")
-        if not chunks:
-            return f"❌ Не найдено информации по: {latin_name}"
-
-        logger.info(f"[RAG] chunks={len(chunks)} key='{mapped_name}' first='{chunks[0].get('latin_name','-')}'")
-
-        # 3) Сборка prompt
-        prompt_text = f"""Ты — специалист по уходу за растениями.
-Составь структурированную карточку ухода на основе текста ниже.
-
-Название растения: {latin_name}
-
-Фрагменты:
-{chr(10).join(f'- {ch.get("content","")}' for ch in chunks)}
-
-Собери карточку для Telegram. Без источников. Без воды. Структурируй по смыслу:
-🌿 Название:
-{latin_name}
-
-🧬 Семейство:
-...
-
-📂 Категория:
-...
-
-💡 Свет:
-...
-
-💧 Полив:
-...
-
-🌡 Температура:
-...
-
-💨 Влажность:
-...
-
-🍽 Удобрения:
-...
-
-🌱 Почва:
-...
-
-♻ Пересадка:
-...
-
-🧬 Размножение:
-...
-
-⭐ Особенности:
-...
-
-Правила:
-- Используй только факты из фрагментов. Не выдумывай.
-- Если блока нет — пиши: "Информация отсутствует."
-- Не меняй порядок блоков.
-- Эмодзи — только в заголовках.
-- Без вводных ("рекомендуется", "следует", "важно").
-"""
-
-        # 4) Вызов GPT
-        logger.info("[GPT] Отправка запроса...")
-        logger.debug(f"[GPT] PROMPT:\n{prompt_text}")
-
-        completion = await openai_client.chat.completions.create(
-            model="gpt-4-turbo",
-            messages=[{"role": "user", "content": prompt_text}],
-            max_tokens=1500,
-            temperature=0.3
-        )
-
-        gpt_raw = completion.choices[0].message.content
-        logger.info("[GPT] Ответ получен.")
-        logger.debug(f"[GPT] RAW:\n{gpt_raw}")
-
-        # 5) Сохранение в БД
-        await save_card({"latin_name": mapped_name, "text": gpt_raw})
-
-        return f"<pre>{html.escape(gpt_raw[:3000])}</pre>"
-
-    except Exception as e:
-        logger.error(f"[get_care_card_html] Ошибка: {e}")
-        return f"<b>Ошибка обработки карточки:</b>\n\n<pre>{html.escape(str(e))}</pre>"
-
+# --- Обработка кнопки «Уход»
 async def handle_care_button(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
 
     try:
-        await query.answer()  # 👈 строго первым
+        await query.answer()  # строго первым
     except Exception as e:
         logger.warning(f"[handle_care_button] query.answer() fail: {e}")
 
     try:
-        latin_name = query.data.split(":", 1)[1]
-        result = await get_care_card_html(latin_name)
+        latin_name = query.data.split(":", 1)[1].strip()
+        # Генерация CTX-карточки (HTML) по латинскому названию
+        html = await generate_card(latin_name, intent="general", lang="ru", outlen="short")
 
-        if result is None:
-            await query.message.reply_text(
-                "❌ Ошибка при получении карточки ухода.",
-                parse_mode="HTML",
-            )
-        elif isinstance(result, dict):
-            msg = "❌ Ошибка при получении карточки ухода."
-            if DEBUG_GPT and result.get("raw"):
-                msg += f"\n\nRAW:\n{result['raw']}"
-            await query.message.reply_text(
-                msg,
-                parse_mode="HTML",
-            )
-        else:
-            await query.message.reply_text(
-                result,
-                parse_mode="HTML",
-            )
+        await query.message.reply_text(
+            html,
+            parse_mode="HTML",
+        )
+
     except Exception as e:
         logger.error(f"[handle_care_button] Ошибка генерации карточки: {e}")
         await query.message.reply_text(
