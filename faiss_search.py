@@ -1,4 +1,4 @@
-# faiss_search.py — CTX-совместимый retrieval
+# faiss_search.py — CTX-совместимый retrieval с fallback и MMR
 import faiss
 import pickle
 import numpy as np
@@ -23,7 +23,7 @@ def _load_index():
 @lru_cache(maxsize=1)
 def _load_meta() -> List[Dict]:
     with META_PATH.open("rb") as f:
-        return pickle.load(f)  # ожидается list[dict] с полями: content|text, latin_name, intent?, source?, section?, category_type?
+        return pickle.load(f)  # ожидается list[dict] с полями: content|text, latin_name, intent?, source?
 
 @lru_cache(maxsize=1)
 def _load_model():
@@ -33,6 +33,7 @@ def _load_model():
 _author_rx = re.compile(r"\b([A-Z][a-z]+|[A-Z]\.|[A-Z][a-z]+\.)$")
 
 def _strip_authors(name: str) -> str:
+    # "Aglaonema commutatum Schott" -> "Aglaonema commutatum"
     name = re.sub(r"\s+(var\.|subsp\.|ssp\.)\s+\w+", "", name, flags=re.I)
     parts = name.split()
     if len(parts) >= 3 and _author_rx.search(parts[-1]):
@@ -54,12 +55,11 @@ def _build_queries(latin_name: str):
         variants.append(genus)  # fallback
     else:
         variants.append(genus)
-    # обогащение терминами ухода (повышает recall)
+    # обогащение терминами ухода (recall)
     queries = [f"{q} уход содержание полив свет температура влажность размножение почва" for q in variants]
     return queries, rank, genus
 
 def _to_text_field(item: Dict) -> str:
-    # Приводим к ключу 'text'
     if "text" in item and item["text"]:
         return str(item["text"])
     if "content" in item and item["content"]:
@@ -69,11 +69,23 @@ def _to_text_field(item: Dict) -> str:
 def _clip(x: str, n: int = CLIP) -> str:
     if len(x) <= n:
         return x
-    return x[:n].rsplit(" ", 1)[0]  # аккуратнее по словам
+    cut = x[:n]
+    # обрезаем по концу предложения, если он есть в последней трети
+    for stop in (". ", "!\n", "?\n", ";\n", "\n\n"):
+        pos = cut.rfind(stop)
+        if pos > n * 0.6:
+            return cut[:pos+1].strip() + "…"
+    return cut.rsplit(" ", 1)[0].strip() + "…"
+
+def overlap(a: str, b: str) -> bool:
+    # грубая проверка сходства по 5-граммам
+    def grams(s): return {s[i:i+5] for i in range(max(0, len(s)-4))}
+    ga, gb = grams(a.lower()), grams(b.lower())
+    return len(ga & gb) / max(1, len(ga | gb)) > 0.6
 
 # --- API ---
 def filter_by_intent(chunks: List[Dict], intent: Optional[str]) -> List[Dict]:
-    if not intent:
+    if not intent or intent.lower() == "general":
         return chunks
     key = intent.strip().lower()
     return [c for c in chunks if str(c.get("intent", "")).lower() == key]
@@ -133,18 +145,32 @@ def get_chunks_by_latin_name(
                 })
                 seen.add(idx)
 
-        # intent-фильтр: для general пропускаем пустые intent
+        # intent-фильтр (если задан и не general)
         if intent and intent.lower() != "general":
             results = [r for r in results if str(r.get("intent", "")).lower() == intent.lower()]
 
+        # предварительная сортировка
         results.sort(key=lambda x: (x["match"] == "species", x["match"] == "genus", x["score"]), reverse=True)
-        return results[:top_k]
+
+        # MMR-диверсификация по тексту
+        selected, used = [], set()
+        for r in results:
+            txt = r["text"][:200]
+            if any(overlap(txt, s) for s in used):
+                continue
+            selected.append(r)
+            used.add(txt)
+            if len(selected) >= top_k:
+                break
+        return selected
 
     # 1-й проход: species
     results = _search(latin_name, "species")
 
     # Fallback: если пусто — пробуем по роду
+    used_mode = "species"
     if not results:
+        used_mode = "species->genus"
         genus = latin_name.split()[0]
         results = _search(genus, "genus")
 
@@ -152,7 +178,7 @@ def get_chunks_by_latin_name(
         import logging as _lg
         _lg.getLogger("faiss").info(
             f"[FAISS] retrieved_k={len(results)} used_k={min(len(results), top_k)} "
-            f"mode={'species->genus' if not results else mode} intent={intent or '-'} q='{latin_name}'"
+            f"mode={used_mode} intent={intent or '-'} q='{latin_name}'"
         )
     except Exception:
         pass

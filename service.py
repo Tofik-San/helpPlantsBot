@@ -18,14 +18,15 @@ HEADERS = {
 # --- OpenAI / CTX / Retrieval / Render
 from openai import AsyncOpenAI
 from ctx_packet import make_ctx
-from faiss_search import get_chunks_by_latin_name  # filter_by_intent больше не нужен
+from faiss_search import get_chunks_by_latin_name  # filter_by_intent не нужен
 from card_formatter import render_html
 from schemas import Card
 
+# --- Константы пайплайна
 K = 12
 FACTS_USED = 6
 CLIP = 450
-TEMP = 0.2
+TEMP = 0.0  # жёсткий детерминизм и экстрактивность
 MODEL = os.getenv("MODEL", "gpt-4o-mini")
 client = AsyncOpenAI(api_key=os.getenv("OPENAI_API_KEY"))
 
@@ -165,11 +166,20 @@ async def generate_card(latin_name: str, intent: str = "general", lang: str = "r
         # Без HTML-тегов — чтобы Telegram не ругался
         return "Недостаточно данных"
 
-    # 3) CTX + строгий формат
+    # 3) CTX + строгий формат (экстрактивность) — нумеруем факты
+    numbered = [f"[{i+1}] {t}" for i, t in enumerate(facts)]
     ctx = make_ctx(latin_name, intent, lang, outlen)
-    sys_msg = "Return a single valid JSON object for schema card.v1. No extra text."
+    sys_msg = (
+        "You are an extractive writer. Use ONLY the provided FACTS. "
+        "Do not add or infer anything that is not explicitly in FACTS. "
+        "If a field cannot be filled strictly from FACTS, keep it short. "
+        "Keep original wording, prefer verbatim. "
+        "For each paragraph in blocks and each tip, append space+'[n]' "
+        "with the most relevant FACT index. "
+        "Return a single valid JSON object for schema card.v1. No extra text."
+    )
     usr_msg = json.dumps(
-        {"CTX": ctx, "SCHEMA": Card.model_json_schema(), "FACTS": facts},
+        {"CTX": ctx, "SCHEMA": Card.model_json_schema(), "FACTS": numbered},
         ensure_ascii=False
     )
 
