@@ -1,6 +1,7 @@
 # service.py
 import os
 import json
+import base64
 import logging
 import aiohttp
 from urllib.parse import urlparse
@@ -41,21 +42,31 @@ async def identify_plant(image_path: str) -> dict:
         logger.error(f"[identify_plant] Ошибка при чтении файла {image_path}: {e}")
         return {"error": f"Ошибка при чтении файла: {str(e)}"}
 
+    # ВАЖНО: Plant.id принимает base64-строки, не raw-байты/latin1
+    image_b64 = base64.b64encode(image_data).decode("ascii")
+
     url = "https://api.plant.id/v2/identify"
     payload = {
-        "images": [image_data.decode("latin1")],
+        "images": [image_b64],
         "modifiers": ["similar_images"],
         "plant_language": "ru",
         "plant_details": ["common_names", "url", "name_authority", "wiki_description", "taxonomy"]
     }
 
     try:
-        async with aiohttp.ClientSession() as session:
+        timeout = aiohttp.ClientTimeout(total=30)
+        async with aiohttp.ClientSession(timeout=timeout) as session:
             async with session.post(url, headers=HEADERS, json=payload) as resp:
+                body = await resp.text()
+                ct = resp.headers.get("content-type", "")
                 if resp.status != 200:
-                    logger.error(f"[identify_plant] API ответ {resp.status}: {await resp.text()}")
-                    return {"error": f"Plant.id API ответ {resp.status}"}
-                return await resp.json()
+                    logger.error(f"[identify_plant] status={resp.status} ct={ct} body[:200]={body[:200]}")
+                    # частые коды: 401/403 (ключ), 402 (квота), 429 (rate limit)
+                    return {"error": f"Plant.id API {resp.status}", "body": body[:200]}
+                if "application/json" not in ct:
+                    logger.error(f"[identify_plant] Non-JSON response ct={ct} body[:200]={body[:200]}")
+                    return {"error": "Plant.id non-json", "body": body[:200]}
+                return json.loads(body)
     except Exception as e:
         logger.error(f"[identify_plant] Ошибка запроса к Plant.id: {e}")
         return {"error": f"Ошибка Plant.id: {str(e)}"}
@@ -136,7 +147,7 @@ async def save_card_html(latin_name: str, intent: str, html: str, source: str = 
 PLANT_NAME_MAP = {
     "Euonymus alatus": "Бересклет крылатый",
     "Ficus elastica": "Фикус эластика",
-    "Sansevieria trifasciata": "Сансевиерия трёхполосная",
+    "Sanseveria trifasciata": "Сансевиерия трёхполосная",
     "Zamioculcas zamiifolia": "Замиокулькас",
     "Hibiscus rosa-sinensis": "Гибискус китайский",
     "Aloe vera": "Алоэ вера",
