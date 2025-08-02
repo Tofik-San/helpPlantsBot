@@ -84,90 +84,77 @@ def get_chunks_by_latin_name(
     mode: str = "species",
     intent: Optional[str] = None,
 ) -> List[Dict]:
-    """
-    Возвращает до top_k чанков со структурой:
-    {
-      'text': str (<= CLIP),
-      'latin_name': str,
-      'intent': str|None,
-      'source': str|None,
-      'score': float,
-      'match': 'species'|'genus'|'none'
-    }
-    """
     index = _load_index()
     meta = _load_meta()
     model = _load_model()
 
-    # Валидация размеров
     if index.ntotal != len(meta):
         raise RuntimeError(f"FAISS/meta mismatch: index.ntotal={index.ntotal} != len(meta)={len(meta)}")
 
-    # Запросы
-    queries, input_rank, input_genus = _build_queries(latin_name)
-    q_vecs = model.encode(queries, convert_to_numpy=True).astype("float32")
+    def _search(_latin: str, _mode: str):
+        queries, input_rank, input_genus = _build_queries(_latin)
+        q_vecs = model.encode(queries, convert_to_numpy=True).astype("float32")
 
-    # Поиск с overfetch
-    over_k = max(top_k * 3, 24)
-    D, I = index.search(q_vecs, over_k)
+        over_k = max(top_k * 3, 24)
+        D, I = index.search(q_vecs, over_k)
 
-    seen, results = set(), []
-    dropped = 0
-    species_key = _strip_authors(latin_name).lower()
-    genus = input_genus.lower()
+        seen, results = set(), []
+        species_key = _strip_authors(_latin).lower()
+        genus = _latin.split()[0].lower()
 
-    for row_d, row_i in zip(D, I):
-        for score, idx in zip(row_d.tolist(), row_i.tolist()):
-            if idx < 0 or idx >= len(meta):
-                dropped += 1
-                continue
-            if idx in seen:
-                continue
+        for row_d, row_i in zip(D, I):
+            for score, idx in zip(row_d.tolist(), row_i.tolist()):
+                if idx < 0 or idx >= len(meta) or idx in seen:
+                    continue
+                raw = dict(meta[idx])
+                ln = str(raw.get("latin_name", "")).lower()
 
-            raw = dict(meta[idx])  # копия
-            ln = str(raw.get("latin_name", "")).lower()
+                if _mode == "genus" and not ln.startswith(genus):
+                    continue
 
-            # Фильтр по режиму (genus строгий по префиксу)
-            if mode == "genus" and not ln.startswith(genus):
-                continue
+                if species_key and species_key in ln:
+                    match = "species"
+                elif genus and ln.startswith(genus):
+                    match = "genus"
+                else:
+                    match = "none"
 
-            # Метка совпадения
-            if species_key and species_key in ln:
-                match = "species"
-            elif genus and ln.startswith(genus):
-                match = "genus"
-            else:
-                match = "none"
+                text = _to_text_field(raw).strip()
+                if not text:
+                    continue
 
-            text = _to_text_field(raw)
-            if not text.strip():
-                continue
+                results.append({
+                    "text": _clip(text, CLIP),
+                    "latin_name": raw.get("latin_name") or "",
+                    "intent": raw.get("intent"),
+                    "source": raw.get("source"),
+                    "score": float(score),
+                    "match": match,
+                })
+                seen.add(idx)
 
-            item = {
-                "text": _clip(text, CLIP),
-                "latin_name": raw.get("latin_name") or "",
-                "intent": raw.get("intent"),
-                "source": raw.get("source"),
-                "score": float(score),
-                "match": match,
-            }
-            results.append(item)
-            seen.add(idx)
+        # intent-фильтр: для general пропускаем пустые intent
+        if intent and intent.lower() != "general":
+            results = [r for r in results if str(r.get("intent", "")).lower() == intent.lower()]
 
-    # Фильтр по intent (если задан)
-    results = filter_by_intent(results, intent)
+        results.sort(key=lambda x: (x["match"] == "species", x["match"] == "genus", x["score"]), reverse=True)
+        return results[:top_k]
 
-    # Приоритизация: species → genus → score
-    results.sort(key=lambda x: (x["match"] == "species", x["match"] == "genus", x["score"]), reverse=True)
+    # 1-й проход: species
+    results = _search(latin_name, "species")
 
-    # Диагностика
+    # Fallback: если пусто — пробуем по роду
+    if not results:
+        genus = latin_name.split()[0]
+        results = _search(genus, "genus")
+
     try:
         import logging as _lg
         _lg.getLogger("faiss").info(
             f"[FAISS] retrieved_k={len(results)} used_k={min(len(results), top_k)} "
-            f"mode={mode} intent={intent or '-'} q='{latin_name}'"
+            f"mode={'species->genus' if not results else mode} intent={intent or '-'} q='{latin_name}'"
         )
     except Exception:
         pass
 
-    return results[:top_k]
+    return results

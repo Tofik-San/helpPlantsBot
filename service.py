@@ -1,3 +1,4 @@
+# service.py
 import os
 import json
 import logging
@@ -17,7 +18,7 @@ HEADERS = {
 # --- OpenAI / CTX / Retrieval / Render
 from openai import AsyncOpenAI
 from ctx_packet import make_ctx
-from faiss_search import get_chunks_by_latin_name, filter_by_intent
+from faiss_search import get_chunks_by_latin_name  # filter_by_intent больше не нужен
 from card_formatter import render_html
 from schemas import Card
 
@@ -154,14 +155,15 @@ async def generate_card(latin_name: str, intent: str = "general", lang: str = "r
         logger.info(f"[CACHE] hit latin={latin_name} intent={intent}")
         return cached
 
-    # 2) Retrieval
-    chunks = get_chunks_by_latin_name(latin_name, top_k=K)
-    chunks = filter_by_intent(chunks, intent)
+    # 2) Retrieval (intent прокидываем внутрь; для general — None)
+    intent_for_rag = None if intent == "general" else intent
+    chunks = get_chunks_by_latin_name(latin_name, top_k=K, intent=intent_for_rag)
     facts = [c["text"][:CLIP] for c in chunks][:FACTS_USED]
 
     if not facts:
         logger.warning(f"[RAG] No facts latin={latin_name}")
-        return "<p>Недостаточно данных</p>"
+        # Без HTML-тегов — чтобы Telegram не ругался
+        return "Недостаточно данных"
 
     # 3) CTX + строгий формат
     ctx = make_ctx(latin_name, intent, lang, outlen)
